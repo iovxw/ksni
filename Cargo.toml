@@ -1,0 +1,11 @@
+[package]
+name = "ksni"
+version = "0.1.0"
+authors = ["iovxw <iovxw@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+dbus = "0.6"
+
+[build-dependencies]
+dbus-codegen = "0.3"

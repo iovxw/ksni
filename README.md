@@ -2,6 +2,12 @@
 
 A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 
+## Todo
+ - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
+ - [ ] org.freedesktop.DBus.Peer
+ - [ ] org.freedesktop.DBus.Introspectable
+ - [ ] org.freedesktop.DBus.Properties
+
 ## License
 
 This is free and unencumbered software released into the public domain.

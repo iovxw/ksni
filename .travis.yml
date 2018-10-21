@@ -4,4 +4,4 @@ rust:
 addons:
   apt:
     packages:
-    - libdbus-dev
+    - libdbus-1-dev

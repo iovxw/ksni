@@ -5,8 +5,8 @@ A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 ## Todo
  - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
  - [ ] org.freedesktop.DBus.Peer
- - [ ] org.freedesktop.DBus.Introspectable
- - [ ] org.freedesktop.DBus.Properties
+ - [x] org.freedesktop.DBus.Introspectable
+ - [x] org.freedesktop.DBus.Properties
 
 ## License
 

@@ -276,6 +276,7 @@ impl<T: Methods> dbus::tree::DataType for TData<T> {
 mod tests {
     use super::*;
     #[test]
+    #[ignore]
     fn it_works() {
         use dbus::BusType;
         use dbus::Connection;

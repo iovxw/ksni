@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 
-use dbus_codegen::{generate, GenOpts};
+use dbus_codegen::{generate, GenOpts, ServerAccess};
 
 fn generate_code(interfaces: &[(&str, GenOpts)], outfile: &str) {
     let mut code = String::new();
@@ -35,6 +35,7 @@ fn main() {
             (
                 "dbus_interfaces/StatusNotifierItem.xml",
                 GenOpts {
+                    serveraccess: ServerAccess::AsRefClosure,
                     skipprefix: Some("org.kde.".into()),
                     ..Default::default()
                 },
@@ -42,6 +43,7 @@ fn main() {
             (
                 "dbus_interfaces/DBusMenu.xml",
                 GenOpts {
+                    serveraccess: ServerAccess::AsRefClosure,
                     skipprefix: Some("com.canonical.".into()),
                     ..Default::default()
                 },

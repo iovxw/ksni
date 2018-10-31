@@ -307,20 +307,31 @@ mod tests {
         p.icon_name = "desktop".to_owned();
         let foo = Foo { p };
 
-        let menu = dbusmenu::DBusMenu {
+        let menu: Rc<(dyn dbus_interface::Dbusmenu<Err = _>)> = Rc::new(dbusmenu::DBusMenu {
             inner: vec![dbusmenu::MenuItem {
                 label: "Exit".into(),
                 ..Default::default()
             }],
-        };
+        });
+        let sni: Rc<(dyn dbus_interface::StatusNotifierItem<Err = _>)> =
+            Rc::new(StatusNotifierItem { inner: foo });
 
-        let f = dbus::tree::Factory::new_fn::<TData<Foo>>();
-        let i = dbus_interface::status_notifier_item_server(&f, (), |minfo| minfo.path.get_data());
-        let tree = f.tree(()).add(
-            f.object_path(SNI_PATH, StatusNotifierItem { inner: foo })
-                .introspectable()
-                .add(i),
-        );
+        let f = dbus::tree::Factory::new_fn::<()>();
+        let sni_interface =
+            dbus_interface::status_notifier_item_server(&f, (), move |_| sni.clone());
+        let menu_interface = dbus_interface::dbusmenu_server(&f, (), move |_| menu.clone());
+        let tree = f
+            .tree(())
+            .add(
+                f.object_path(SNI_PATH, ())
+                    .introspectable()
+                    .add(sni_interface),
+            )
+            .add(
+                f.object_path(MENU_PATH, ())
+                    .introspectable()
+                    .add(menu_interface),
+            );
         conn.register_name(&name, 0).unwrap();
         tree.set_registered(&conn, true).unwrap();
         conn.add_handler(tree);

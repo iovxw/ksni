@@ -214,6 +214,7 @@ pub struct DBusMenu {
     pub inner: Vec<MenuItem>,
 }
 
+#[derive(Debug)]
 pub struct DBusMenuItem {
     id: i32,
     properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
@@ -274,14 +275,17 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
         ),
         Self::Err,
     > {
-        Ok((0, DBusMenuItem::from(self.inner.clone()).into()))
+        let mut x = dbg!(DBusMenuItem::from(self.inner.clone()));
+        x.submenu[0].id = 1;
+        Ok((0, x.into()))
     }
     fn get_group_properties(
         &self,
         ids: Vec<i32>,
         property_names: Vec<&str>,
     ) -> Result<Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>, Self::Err> {
-        unimplemented!()
+        dbg!((ids, property_names));
+        Ok(vec![])
     }
     fn get_property(
         &self,
@@ -297,7 +301,8 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
         data: Variant<Box<dyn RefArg>>,
         timestamp: u32,
     ) -> Result<(), Self::Err> {
-        unimplemented!()
+        dbg!((id, event_id, data, timestamp));
+        Ok(())
     }
     fn event_group(
         &self,
@@ -306,21 +311,22 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
         unimplemented!()
     }
     fn about_to_show(&self, id: i32) -> Result<bool, Self::Err> {
-        unimplemented!()
+        dbg!(("about to show", id));
+        Ok(true)
     }
     fn about_to_show_group(&self, ids: Vec<i32>) -> Result<(Vec<i32>, Vec<i32>), Self::Err> {
         unimplemented!()
     }
     fn get_version(&self) -> Result<u32, Self::Err> {
-        unimplemented!()
+        Ok(0)
     }
     fn get_text_direction(&self) -> Result<String, Self::Err> {
-        unimplemented!()
+        Ok("ltr".into())
     }
     fn get_status(&self) -> Result<String, Self::Err> {
-        unimplemented!()
+        Ok("normal".into())
     }
     fn get_icon_theme_path(&self) -> Result<Vec<String>, Self::Err> {
-        unimplemented!()
+        Ok(vec![])
     }
 }

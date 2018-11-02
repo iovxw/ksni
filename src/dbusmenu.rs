@@ -81,7 +81,7 @@ macro_rules! if_not_default_then_insert {
     };
 }
 
-impl From<MenuItem> for DBusMenuItem {
+impl From<MenuItem> for HashMap<String, Variant<Box<dyn RefArg + 'static>>> {
     fn from(item: MenuItem) -> Self {
         let mut properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>> =
             HashMap::with_capacity(11);
@@ -105,25 +105,11 @@ impl From<MenuItem> for DBusMenuItem {
         );
         if_not_default_then_insert!(properties, item, default, toggle_state, (|r| r as i32));
 
-        if !item.submenu.is_empty() {
-            properties.insert(
-                "children_display".into(),
-                Variant(Box::new("submenu".to_owned())),
-            );
-        }
-
         for (k, v) in item.vendor_properties {
             properties.insert(k.to_string(), v);
         }
 
-        // FIXME
-        let submenu = item.submenu.into_iter().map(Self::from).collect();
-
-        DBusMenuItem {
-            id: 0,
-            properties,
-            submenu,
-        }
+        properties
     }
 }
 
@@ -209,52 +195,107 @@ pub enum ToggleState {
     Indeterminate = -1,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DBusMenu {
-    pub inner: Vec<MenuItem>,
+    // A list of menu item and it's submenu
+    pub list: Vec<(MenuItem, Vec<usize>)>,
 }
 
-#[derive(Debug)]
-pub struct DBusMenuItem {
-    id: i32,
-    properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
-    submenu: Vec<DBusMenuItem>,
-}
-
-impl From<Vec<MenuItem>> for DBusMenuItem {
+impl From<Vec<MenuItem>> for DBusMenu {
     fn from(items: Vec<MenuItem>) -> Self {
-        let mut root: HashMap<String, Variant<Box<dyn RefArg + 'static>>> =
-            HashMap::with_capacity(1);
-        root.insert(
-            "children_display".into(),
-            Variant(Box::new("submenu".to_owned())),
-        );
-        Self {
-            id: 0,
-            properties: root,
-            submenu: items.into_iter().map(Self::from).collect(),
+        let mut list: Vec<(MenuItem, Vec<usize>)> =
+            vec![(MenuItem::default(), Vec::with_capacity(items.len()))];
+
+        let mut stack = vec![(items, 0)]; // (menu, menu's parent)
+
+        while let Some((mut current_menu, parent_index)) = stack.pop() {
+            while !current_menu.is_empty() {
+                let mut item = current_menu.remove(0);
+                let mut submenu = Vec::new();
+                std::mem::swap(&mut item.submenu, &mut submenu);
+                let index = list.len();
+                list.push((item, Vec::with_capacity(submenu.len())));
+                // Add self to parent's submenu
+                list[parent_index].1.push(index);
+                if !submenu.is_empty() {
+                    stack.push((current_menu, parent_index));
+                    stack.push((submenu, index));
+                    break;
+                }
+            }
+        }
+
+        DBusMenu { list }
+    }
+}
+
+fn to_dbusmenu_variant(
+    menu: &[(MenuItem, Vec<usize>)],
+    parent_id: usize,
+    recursion_depth: Option<usize>,
+    property_names: Vec<&str>,
+) -> (
+    i32,
+    HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
+    Vec<Variant<Box<dyn RefArg + 'static>>>,
+) {
+    if menu.is_empty() {
+        return Default::default();
+    }
+
+    let mut x: Vec<
+        Option<(
+            i32,
+            HashMap<String, Variant<Box<dyn RefArg>>>,
+            Vec<Variant<Box<dyn RefArg>>>,
+            Vec<usize>,
+        )>,
+    > = menu
+        .into_iter()
+        .enumerate()
+        .map(|(id, (item, submenu))| {
+            (
+                id as i32,
+                item.clone().into(),
+                Vec::with_capacity(submenu.len()),
+                submenu.clone(),
+            )
+        })
+        .map(Some)
+        .collect();
+    let mut stack = vec![parent_id];
+
+    while let Some(current) = stack.pop() {
+        let submenu = &mut x[current].as_mut().unwrap().3;
+        if submenu.is_empty() {
+            let c = x[current].as_mut().unwrap();
+            if !c.2.is_empty() {
+                c.1.insert(
+                    "children-display".into(),
+                    Variant(Box::new("submenu".to_owned())),
+                );
+            }
+            if let Some(parent) = stack.pop() {
+                x.push(None);
+                let item = x.swap_remove(current).unwrap();
+                stack.push(parent);
+                x[parent]
+                    .as_mut()
+                    .unwrap()
+                    .2
+                    .push(Variant(Box::new((item.0, item.1, item.2))));
+            }
+        } else {
+            stack.push(current);
+            let sub = submenu.remove(0);
+            if recursion_depth.is_some() && recursion_depth.unwrap() + 1 >= stack.len() {
+                stack.push(sub);
+            }
         }
     }
-}
 
-impl From<DBusMenuItem>
-    for (
-        i32,
-        HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
-        Vec<Variant<Box<dyn RefArg + 'static>>>,
-    )
-{
-    fn from(menu: DBusMenuItem) -> Self {
-        (
-            menu.id,
-            menu.properties,
-            menu.submenu
-                .into_iter()
-                // FIXME
-                .map(|menu| Variant(Box::new(Self::from(menu)) as Box<dyn RefArg>))
-                .collect(),
-        )
-    }
+    let r = x.remove(parent_id).unwrap();
+    (r.0, r.1, r.2)
 }
 
 impl crate::dbus_interface::Dbusmenu for DBusMenu {
@@ -275,9 +316,16 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
         ),
         Self::Err,
     > {
-        let mut x = dbg!(DBusMenuItem::from(self.inner.clone()));
-        x.submenu[0].id = 1;
-        Ok((0, x.into()))
+        dbg!((parent_id, recursion_depth, &property_names));
+        Ok((
+            0,
+            dbg!(to_dbusmenu_variant(
+                &self.list,
+                parent_id as usize,
+                Some(recursion_depth as usize),
+                property_names,
+            )),
+        ))
     }
     fn get_group_properties(
         &self,
@@ -328,5 +376,152 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
     }
     fn get_icon_theme_path(&self) -> Result<Vec<String>, Self::Err> {
         Ok(vec![])
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_menuitem_list_to_dbusmenu() {
+        let x = vec![
+            MenuItem {
+                label: "a".into(),
+                submenu: vec![
+                    MenuItem {
+                        label: "a1".into(),
+                        submenu: vec![MenuItem {
+                            label: "a1.1".into(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    MenuItem {
+                        label: "a2".into(),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            MenuItem {
+                label: "b".into(),
+                ..Default::default()
+            },
+            MenuItem {
+                label: "c".into(),
+                submenu: vec![
+                    MenuItem {
+                        label: "c1".into(),
+                        ..Default::default()
+                    },
+                    MenuItem {
+                        label: "c2".into(),
+                        submenu: vec![MenuItem {
+                            label: "c2.1".into(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        ];
+
+        let r: DBusMenu = x.into();
+        let expect = DBusMenu {
+            list: vec![
+                (
+                    MenuItem {
+                        label: "".into(),
+                        ..Default::default()
+                    },
+                    vec![1, 5, 6],
+                ),
+                (
+                    MenuItem {
+                        label: "a".into(),
+                        ..Default::default()
+                    },
+                    vec![2, 4],
+                ),
+                (
+                    MenuItem {
+                        label: "a1".into(),
+                        ..Default::default()
+                    },
+                    vec![3],
+                ),
+                (
+                    MenuItem {
+                        label: "a1.1".into(),
+                        ..Default::default()
+                    },
+                    vec![],
+                ),
+                (
+                    MenuItem {
+                        label: "a2".into(),
+                        ..Default::default()
+                    },
+                    vec![],
+                ),
+                (
+                    MenuItem {
+                        label: "b".into(),
+                        ..Default::default()
+                    },
+                    vec![],
+                ),
+                (
+                    MenuItem {
+                        label: "c".into(),
+                        ..Default::default()
+                    },
+                    vec![7, 8],
+                ),
+                (
+                    MenuItem {
+                        label: "c1".into(),
+                        ..Default::default()
+                    },
+                    vec![],
+                ),
+                (
+                    MenuItem {
+                        label: "c2".into(),
+                        ..Default::default()
+                    },
+                    vec![9],
+                ),
+                (
+                    MenuItem {
+                        label: "c2.1".into(),
+                        ..Default::default()
+                    },
+                    vec![],
+                ),
+            ],
+        };
+        assert_eq!(r.list.len(), 10);
+        assert_eq!(r.list[0].1, expect.list[0].1);
+        assert_eq!(r.list[1].1, expect.list[1].1);
+        assert_eq!(r.list[2].1, expect.list[2].1);
+        assert_eq!(r.list[3].1, expect.list[3].1);
+        assert_eq!(r.list[4].1, expect.list[4].1);
+        assert_eq!(r.list[5].1, expect.list[5].1);
+        assert_eq!(r.list[6].1, expect.list[6].1);
+        assert_eq!(r.list[7].1, expect.list[7].1);
+        assert_eq!(r.list[8].1, expect.list[8].1);
+        assert_eq!(r.list[9].1, expect.list[9].1);
+        assert_eq!(r.list[0].0.label, expect.list[0].0.label);
+        assert_eq!(r.list[1].0.label, expect.list[1].0.label);
+        assert_eq!(r.list[2].0.label, expect.list[2].0.label);
+        assert_eq!(r.list[3].0.label, expect.list[3].0.label);
+        assert_eq!(r.list[4].0.label, expect.list[4].0.label);
+        assert_eq!(r.list[5].0.label, expect.list[5].0.label);
+        assert_eq!(r.list[6].0.label, expect.list[6].0.label);
+        assert_eq!(r.list[7].0.label, expect.list[7].0.label);
+        assert_eq!(r.list[8].0.label, expect.list[8].0.label);
+        assert_eq!(r.list[9].0.label, expect.list[9].0.label);
     }
 }

@@ -307,12 +307,37 @@ mod tests {
         p.icon_name = "desktop".to_owned();
         let foo = Foo { p };
 
-        let menu: Rc<(dyn dbus_interface::Dbusmenu<Err = _>)> = Rc::new(dbusmenu::DBusMenu {
-            inner: vec![dbusmenu::MenuItem {
-                label: "Exit".into(),
-                ..Default::default()
-            }],
-        });
+        let menu: Rc<(dyn dbus_interface::Dbusmenu<Err = _>)> =
+            Rc::new(dbusmenu::DBusMenu::from(vec![
+                dbusmenu::MenuItem {
+                    label: "a".into(),
+                    submenu: vec![
+                        dbusmenu::MenuItem {
+                            label: "a1".into(),
+                            submenu: vec![
+                                dbusmenu::MenuItem {
+                                    label: "a1.1".into(),
+                                    ..Default::default()
+                                },
+                                dbusmenu::MenuItem {
+                                    label: "a1.2".into(),
+                                    ..Default::default()
+                                },
+                            ],
+                            ..Default::default()
+                        },
+                        dbusmenu::MenuItem {
+                            label: "a2".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+                dbusmenu::MenuItem {
+                    label: "b".into(),
+                    ..Default::default()
+                },
+            ]));
         let sni: Rc<(dyn dbus_interface::StatusNotifierItem<Err = _>)> =
             Rc::new(StatusNotifierItem { inner: foo });
 

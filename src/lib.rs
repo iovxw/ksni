@@ -272,6 +272,26 @@ impl<T: Methods> dbus::tree::DataType for TData<T> {
     type Signal = ();
 }
 
+fn name_owner_changed(ci: &dbus::ConnectionItem) -> Option<(&str, Option<&str>, Option<&str>)> {
+    let m = if let &dbus::ConnectionItem::Signal(ref s) = ci {
+        s
+    } else {
+        return None;
+    };
+    if &*m.interface().unwrap() != "org.freedesktop.DBus" {
+        return None;
+    };
+    if &*m.member().unwrap() != "NameOwnerChanged" {
+        return None;
+    };
+    let (name, old_owner, new_owner) = m.get3::<&str, &str, &str>();
+    Some((
+        name.expect("NameOwnerChanged"),
+        old_owner.filter(|s| !s.is_empty()),
+        new_owner.filter(|s| !s.is_empty()),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,12 +389,22 @@ mod tests {
         use dbus_interface::StatusNotifierWatcher;
         status_notifier_watcher
             .register_status_notifier_item(&name)
+            .unwrap_or_default();
+
+        conn.add_match("interface='org.freedesktop.DBus',member='NameOwnerChanged'")
             .unwrap();
 
-        for m in conn.iter(1000) {
-            let msg =
-                dbus_interface::StatusNotifierItemNewIcon {}.to_emit_message(&SNI_PATH.into());
-            conn.send(msg).unwrap();
+        for m in conn.iter(500) {
+            //let msg =
+            //    dbus_interface::StatusNotifierItemNewIcon {}.to_emit_message(&SNI_PATH.into());
+            //conn.send(msg).unwrap();
+            if let Some(("org.kde.StatusNotifierWatcher", _, Some(_new_owner))) =
+                name_owner_changed(&m)
+            {
+                status_notifier_watcher
+                    .register_status_notifier_item(&name)
+                    .unwrap_or_default();
+            }
             dbg!(m);
         }
     }

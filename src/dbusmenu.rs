@@ -288,7 +288,7 @@ fn to_dbusmenu_variant(
         } else {
             stack.push(current);
             let sub = submenu.remove(0);
-            if recursion_depth.is_some() && recursion_depth.unwrap() + 1 >= stack.len() {
+            if recursion_depth.is_none() || recursion_depth.unwrap() + 1 >= stack.len() {
                 stack.push(sub);
             }
         }
@@ -322,7 +322,11 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
             dbg!(to_dbusmenu_variant(
                 &self.list,
                 parent_id as usize,
-                Some(recursion_depth as usize),
+                if recursion_depth < 0 {
+                    None
+                } else {
+                    Some(recursion_depth as usize)
+                },
                 property_names,
             )),
         ))

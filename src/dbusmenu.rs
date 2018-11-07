@@ -68,42 +68,63 @@ impl Clone for MenuItem {
 }
 
 macro_rules! if_not_default_then_insert {
-    ($map: ident, $item: ident, $default: ident, $property: ident) => {
-        if_not_default_then_insert!($map, $item, $default, $property, (|r| r));
+    ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident) => {
+        if_not_default_then_insert!($map, $item, $default, $filter, $property, (|r| r));
     };
-    ($map: ident, $item: ident, $default: ident, $property: ident, $to_refarg: tt) => {
-        if $item.$property != $default.$property {
+    ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $to_refarg: tt) => {{
+        let name = stringify!($property);
+        if_not_default_then_insert!($map, $item, $default, $filter, $property, name, $to_refarg);
+    }};
+    ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $property_name: tt, $to_refarg: tt) => {
+        if ($filter.is_empty() || $filter.contains(&$property_name))
+            && $item.$property != $default.$property
+        {
             $map.insert(
-                stringify!($property).to_string(),
+                $property_name.to_string(),
                 Variant(Box::new($to_refarg($item.$property))),
             );
         }
     };
 }
 
-impl From<MenuItem> for HashMap<String, Variant<Box<dyn RefArg + 'static>>> {
-    fn from(item: MenuItem) -> Self {
+impl MenuItem {
+    fn to_dbus_map(&self, filter: &[&str]) -> HashMap<String, Variant<Box<dyn RefArg + 'static>>> {
+        let item = self.clone();
         let mut properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>> =
             HashMap::with_capacity(11);
 
         let default = MenuItem::default();
-        if item.r#type != default.r#type {
-            properties.insert("type".into(), Variant(Box::new(item.r#type.to_string())));
-        }
-        if_not_default_then_insert!(properties, item, default, label);
-        if_not_default_then_insert!(properties, item, default, enabled);
-        if_not_default_then_insert!(properties, item, default, visible);
-        if_not_default_then_insert!(properties, item, default, icon_name);
-        if_not_default_then_insert!(properties, item, default, icon_data);
-        if_not_default_then_insert!(properties, item, default, shortcut);
         if_not_default_then_insert!(
             properties,
             item,
             default,
+            filter,
+            r#type,
+            "type",
+            (|r: ItemType| r.to_string())
+        );
+        if_not_default_then_insert!(properties, item, default, filter, label);
+        if_not_default_then_insert!(properties, item, default, filter, enabled);
+        if_not_default_then_insert!(properties, item, default, filter, visible);
+        if_not_default_then_insert!(properties, item, default, filter, icon_name);
+        if_not_default_then_insert!(properties, item, default, filter, icon_data);
+        if_not_default_then_insert!(properties, item, default, filter, shortcut);
+        if_not_default_then_insert!(
+            properties,
+            item,
+            default,
+            filter,
             toggle_type,
             (|r: ToggleType| r.to_string())
         );
-        if_not_default_then_insert!(properties, item, default, toggle_state, (|r| r as i32));
+        if_not_default_then_insert!(
+            properties,
+            item,
+            default,
+            filter,
+            toggle_state,
+            (|r| r as i32)
+        );
 
         for (k, v) in item.vendor_properties {
             properties.insert(k.to_string(), v);
@@ -256,7 +277,7 @@ fn to_dbusmenu_variant(
         .map(|(id, (item, submenu))| {
             (
                 id as i32,
-                item.clone().into(),
+                item.to_dbus_map(&property_names),
                 Vec::with_capacity(submenu.len()),
                 submenu.clone(),
             )
@@ -336,8 +357,12 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
         ids: Vec<i32>,
         property_names: Vec<&str>,
     ) -> Result<Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>, Self::Err> {
-        dbg!((ids, property_names));
-        Ok(vec![])
+        dbg!(("get_group_properties", &ids, &property_names));
+        let r = ids
+            .into_iter()
+            .map(|id| (id, self.list[id as usize].0.to_dbus_map(&property_names)))
+            .collect();
+        Ok(dbg!(r))
     }
     fn get_property(
         &self,
@@ -364,7 +389,7 @@ impl crate::dbus_interface::Dbusmenu for DBusMenu {
     }
     fn about_to_show(&self, id: i32) -> Result<bool, Self::Err> {
         dbg!(("about to show", id));
-        Ok(true)
+        Ok(false)
     }
     fn about_to_show_group(&self, ids: Vec<i32>) -> Result<(Vec<i32>, Vec<i32>), Self::Err> {
         unimplemented!()

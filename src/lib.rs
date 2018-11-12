@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+use dbus::arg::{RefArg, Variant};
+
 pub mod dbus_interface;
 pub mod dbusmenu;
+pub mod sni;
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
@@ -13,163 +17,23 @@ pub trait Methods {
     fn activate(&self, x: i32, y: i32) -> Result<(), Self::Err>;
     fn secondary_activate(&self, x: i32, y: i32) -> Result<(), Self::Err>;
     fn scroll(&self, delta: i32, dir: &str) -> Result<(), Self::Err>;
-    fn properties(&self) -> &Properties;
+    fn properties(&self) -> &sni::Properties;
 }
 
-#[derive(Clone, Debug)]
-pub struct Properties {
-    pub category: Category,
-    pub id: String,
-    pub title: String,
-    pub status: Status,
-    pub window_id: i32, // u32 in org.freedesktop.StatusNotifierItem
-    pub icon_name: String,
-    pub icon_pixmap: Vec<Icon>,
-    pub overlay_icon_name: String,
-    pub overlay_icon_pixmap: Vec<Icon>,
-    pub attention_icon_name: String,
-    pub attention_icon_pixmap: Vec<Icon>,
-    pub attention_moive_name: String,
-    pub tool_tip: ToolTip,
-
-    conn: Rc<dbus::Connection>,
-}
-
-impl Properties {
-    fn new(conn: Rc<dbus::Connection>) -> Self {
-        Properties {
-            category: Category::ApplicationStatus,
-            id: Default::default(),
-            title: Default::default(),
-            status: Status::Active,
-            window_id: 0,
-            icon_name: Default::default(),
-            icon_pixmap: Default::default(),
-            overlay_icon_name: Default::default(),
-            overlay_icon_pixmap: Default::default(),
-            attention_icon_name: Default::default(),
-            attention_icon_pixmap: Default::default(),
-            attention_moive_name: Default::default(),
-            tool_tip: Default::default(),
-            conn,
-        }
-    }
-}
-
-/// Describes the category of this item.
-#[derive(Copy, Clone, Debug)]
-pub enum Category {
-    /// The item describes the status of a generic application, for instance
-    /// the current state of a media player. In the case where the category of
-    /// the item can not be known, such as when the item is being proxied from
-    /// another incompatible or emulated system, ApplicationStatus can be used
-    /// a sensible default fallback.
-    ApplicationStatus,
-    /// The item describes the status of communication oriented applications,
-    /// like an instant messenger or an email client.
-    Communications,
-    /// The item describes services of the system not seen as a stand alone
-    /// application by the user, such as an indicator for the activity of a disk
-    /// indexing service.
-    SystemServices,
-    /// The item describes the state and control of a particular hardware,
-    /// such as an indicator of the battery charge or sound card volume control.
-    Hardware,
-}
-
-impl fmt::Display for Category {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let r = match *self {
-            Category::ApplicationStatus => "ApplicationStatus",
-            Category::Communications => "Communications",
-            Category::SystemServices => "SystemServices",
-            Category::Hardware => "Hardware",
-        };
-        f.write_str(r)
-    }
-}
-
-/// Describes the status of this item or of the associated application.
-#[derive(Copy, Clone, Debug)]
-pub enum Status {
-    /// The item doesn't convey important information to the user, it can be
-    /// considered an "idle" status and is likely that visualizations will chose
-    /// to hide it.
-    Passive,
-    /// The item is active, is more important that the item will be shown in
-    /// some way to the user.
-    Active,
-    /// The item carries really important information for the user, such as
-    /// battery charge running out and is wants to incentive the direct user
-    /// intervention. Visualizations should emphasize in some way the items with
-    /// NeedsAttention status.
-    NeedsAttention,
-}
-
-impl fmt::Display for Status {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let r = match *self {
-            Status::Passive => "Passive",
-            Status::Active => "Active",
-            Status::NeedsAttention => "NeedsAttention",
-        };
-        f.write_str(r)
-    }
-}
-
-/// Data structure that describes extra information associated to this item,
-/// that can be visualized for instance by a tooltip (or by any other mean the
-/// visualization consider appropriate.
-#[derive(Clone, Debug, Default)]
-pub struct ToolTip {
-    /// Freedesktop-compliant name for an icon.
-    pub icon_name: String,
-    /// Icon data
-    pub icon_pixmap: Vec<Icon>,
-    /// Title for this tooltip
-    pub title: String,
-    /// Descriptive text for this tooltip. It can contain also a subset of the
-    /// HTML markup language, for a list of allowed tags see Section Markup.
-    pub description: String,
-}
-
-impl From<ToolTip> for (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
-    fn from(tooltip: ToolTip) -> Self {
-        (
-            tooltip.icon_name,
-            tooltip.icon_pixmap.into_iter().map(Into::into).collect(),
-            tooltip.title,
-            tooltip.description,
-        )
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Icon {
-    pub width: i32,
-    pub height: i32,
-    /// ARGB32 format, network byte order
-    pub data: Vec<u8>,
-}
-
-impl From<Icon> for (i32, i32, Vec<u8>) {
-    fn from(icon: Icon) -> Self {
-        (icon.width, icon.height, icon.data)
-    }
-}
-
-#[derive(Copy, Clone, Default)]
-struct StatusNotifierItem<T: Methods> {
+#[derive(Clone, Default)]
+struct TrayService<T: Methods> {
     inner: T,
+    // A list of menu item and it's submenu
+    list: Vec<(dbusmenu::MenuItem, Vec<usize>)>,
 }
 
-impl<T: Methods> fmt::Debug for StatusNotifierItem<T> {
+impl<T: Methods> fmt::Debug for TrayService<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct(&format!("StatusNotifierItem")).finish()
     }
 }
 
-impl<T: Methods> dbus_interface::StatusNotifierItem for StatusNotifierItem<T> {
+impl<T: Methods> dbus_interface::StatusNotifierItem for TrayService<T> {
     type Err = dbus::tree::MethodErr;
     fn activate(&self, x: i32, y: i32) -> Result<(), Self::Err> {
         self.inner
@@ -185,6 +49,15 @@ impl<T: Methods> dbus_interface::StatusNotifierItem for StatusNotifierItem<T> {
         self.inner
             .scroll(delta, dir)
             .map_err(|e| dbus::tree::MethodErr::failed(&e))
+    }
+    fn context_menu(&self, x: i32, y: i32) -> Result<(), Self::Err> {
+        Ok(())
+    }
+    fn get_item_is_menu(&self) -> Result<bool, Self::Err> {
+        Ok(false)
+    }
+    fn get_attention_movie_name(&self) -> Result<String, Self::Err> {
+        Ok("".into())
     }
     fn get_category(&self) -> Result<String, Self::Err> {
         Ok(self.inner.properties().category.to_string())
@@ -253,23 +126,90 @@ impl<T: Methods> dbus_interface::StatusNotifierItem for StatusNotifierItem<T> {
     }
 }
 
-struct TData<T: Methods> {
-    _marker: PhantomData<*const T>,
-}
-impl<T: Methods> Default for TData<T> {
-    fn default() -> Self {
-        TData {
-            _marker: PhantomData,
-        }
+impl<T: Methods> dbus_interface::Dbusmenu for TrayService<T> {
+    type Err = dbus::tree::MethodErr;
+    fn get_layout(
+        &self,
+        parent_id: i32,
+        recursion_depth: i32,
+        property_names: Vec<&str>,
+    ) -> Result<
+        (
+            u32,
+            (
+                i32,
+                HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
+                Vec<Variant<Box<dyn RefArg + 'static>>>,
+            ),
+        ),
+        Self::Err,
+    > {
+        Ok((
+            0,
+            crate::dbusmenu::to_dbusmenu_variant(
+                &self.list,
+                parent_id as usize,
+                if recursion_depth < 0 {
+                    None
+                } else {
+                    Some(recursion_depth as usize)
+                },
+                property_names,
+            ),
+        ))
     }
-}
-impl<T: Methods> dbus::tree::DataType for TData<T> {
-    type Tree = ();
-    type ObjectPath = StatusNotifierItem<T>;
-    type Property = ();
-    type Interface = ();
-    type Method = ();
-    type Signal = ();
+    fn get_group_properties(
+        &self,
+        ids: Vec<i32>,
+        property_names: Vec<&str>,
+    ) -> Result<Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>, Self::Err> {
+        let r = ids
+            .into_iter()
+            .map(|id| (id, self.list[id as usize].0.to_dbus_map(&property_names)))
+            .collect();
+        Ok(r)
+    }
+    fn get_property(
+        &self,
+        id: i32,
+        name: &str,
+    ) -> Result<Variant<Box<dyn RefArg + 'static>>, Self::Err> {
+        unimplemented!()
+    }
+    fn event(
+        &self,
+        id: i32,
+        event_id: &str,
+        data: Variant<Box<dyn RefArg>>,
+        timestamp: u32,
+    ) -> Result<(), Self::Err> {
+        dbg!((id, event_id, data, timestamp));
+        Ok(())
+    }
+    fn event_group(
+        &self,
+        events: Vec<(i32, &str, Variant<Box<dyn RefArg>>, u32)>,
+    ) -> Result<Vec<i32>, Self::Err> {
+        unimplemented!()
+    }
+    fn about_to_show(&self, id: i32) -> Result<bool, Self::Err> {
+        Ok(false)
+    }
+    fn about_to_show_group(&self, ids: Vec<i32>) -> Result<(Vec<i32>, Vec<i32>), Self::Err> {
+        unimplemented!()
+    }
+    fn get_version(&self) -> Result<u32, Self::Err> {
+        Ok(3)
+    }
+    fn get_text_direction(&self) -> Result<String, Self::Err> {
+        Ok("ltr".into())
+    }
+    fn get_status(&self) -> Result<String, Self::Err> {
+        Ok("normal".into())
+    }
+    fn get_icon_theme_path(&self) -> Result<Vec<String>, Self::Err> {
+        Ok(vec![])
+    }
 }
 
 fn name_owner_changed(ci: &dbus::ConnectionItem) -> Option<(&str, Option<&str>, Option<&str>)> {
@@ -306,7 +246,7 @@ mod tests {
         let conn = Rc::new(conn);
 
         struct Foo {
-            p: Properties,
+            p: sni::Properties,
         }
         impl Methods for Foo {
             type Err = String;
@@ -319,16 +259,17 @@ mod tests {
             fn scroll(&self, delta: i32, dir: &str) -> Result<(), Self::Err> {
                 Ok(())
             }
-            fn properties(&self) -> &Properties {
+            fn properties(&self) -> &sni::Properties {
                 &self.p
             }
         }
-        let mut p = Properties::new(conn.clone());
+        let mut p = sni::Properties::new(conn.clone());
         p.icon_name = "desktop".to_owned();
         let foo = Foo { p };
 
-        let menu: Rc<(dyn dbus_interface::Dbusmenu<Err = _>)> =
-            Rc::new(dbusmenu::DBusMenu::from(vec![
+        let tray = Rc::new(TrayService {
+            inner: foo,
+            list: dbusmenu::menu_flatten(vec![
                 dbusmenu::MenuItem {
                     label: "a".into(),
                     submenu: vec![
@@ -357,14 +298,17 @@ mod tests {
                     label: "b".into(),
                     ..Default::default()
                 },
-            ]));
-        let sni: Rc<(dyn dbus_interface::StatusNotifierItem<Err = _>)> =
-            Rc::new(StatusNotifierItem { inner: foo });
+            ]),
+        });
 
+        let tray1 = tray.clone();
         let f = dbus::tree::Factory::new_fn::<()>();
-        let sni_interface =
-            dbus_interface::status_notifier_item_server(&f, (), move |_| sni.clone());
-        let menu_interface = dbus_interface::dbusmenu_server(&f, (), move |_| menu.clone());
+        let sni_interface = dbus_interface::status_notifier_item_server(&f, (), move |_| {
+            tray1.clone() as Rc<dyn dbus_interface::StatusNotifierItem<Err = _>>
+        });
+        let menu_interface = dbus_interface::dbusmenu_server(&f, (), move |_| {
+            tray.clone() as Rc<dbus_interface::Dbusmenu<Err = _>>
+        });
         let tree = f
             .tree(())
             .add(

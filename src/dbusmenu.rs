@@ -1,10 +1,142 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::rc::Rc;
 
 use dbus::arg::{RefArg, Variant};
 
-#[derive(Debug)]
-pub struct MenuItem {
+pub enum MenuItem {
+    Standard(StandardItem),
+    Sepatator,
+    Checkmark(CheckmarkItem),
+    RadioGroup(RadioGroup),
+}
+
+pub struct StandardItem {
+    pub label: String,
+    pub enabled: bool,
+    pub visible: bool,
+    pub icon_name: String,
+    pub icon_data: Vec<u8>,
+    pub shortcut: Vec<Vec<String>>,
+    pub submenu: Vec<MenuItem>,
+    pub activate: Box<Fn()>,
+}
+
+impl Default for StandardItem {
+    fn default() -> Self {
+        StandardItem {
+            label: String::default(),
+            enabled: true,
+            visible: true,
+            icon_name: String::default(),
+            icon_data: Vec::default(),
+            shortcut: Vec::default(),
+            submenu: Vec::default(),
+            activate: Box::new(|| {}),
+        }
+    }
+}
+
+impl From<StandardItem> for MenuItem {
+    fn from(item: StandardItem) -> Self {
+        MenuItem::Standard(item)
+    }
+}
+
+impl From<StandardItem> for RawMenuItem {
+    fn from(item: StandardItem) -> Self {
+        let activate = item.activate;
+        Self {
+            r#type: ItemType::Standard,
+            label: item.label,
+            enabled: item.enabled,
+            visible: item.visible,
+            icon_name: item.icon_name,
+            icon_data: item.icon_data,
+            shortcut: item.shortcut,
+            on_clicked: Rc::new(move |_, _| {
+                (activate)();
+                Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+}
+
+pub struct CheckmarkItem {
+    pub label: String,
+    pub enabled: bool,
+    pub visible: bool,
+    pub checked: bool,
+    pub icon_name: String,
+    pub icon_data: Vec<u8>,
+    pub shortcut: Vec<Vec<String>>,
+    pub activate: Box<Fn(bool)>,
+}
+
+impl Default for CheckmarkItem {
+    fn default() -> Self {
+        CheckmarkItem {
+            label: String::default(),
+            enabled: true,
+            visible: true,
+            checked: false,
+            icon_name: String::default(),
+            icon_data: Vec::default(),
+            shortcut: Vec::default(),
+            activate: Box::new(|_| {}),
+        }
+    }
+}
+
+impl From<CheckmarkItem> for MenuItem {
+    fn from(item: CheckmarkItem) -> Self {
+        MenuItem::Checkmark(item)
+    }
+}
+
+impl From<CheckmarkItem> for RawMenuItem {
+    fn from(item: CheckmarkItem) -> Self {
+        let activate = item.activate;
+        Self {
+            r#type: ItemType::Standard,
+            label: item.label,
+            enabled: item.enabled,
+            visible: item.visible,
+            icon_name: item.icon_name,
+            icon_data: item.icon_data,
+            shortcut: item.shortcut,
+            toggle_type: ToggleType::Checkmark,
+            toggle_state: if item.checked {
+                ToggleState::On
+            } else {
+                ToggleState::Off
+            },
+            on_clicked: Rc::new(move |tree, id| {
+                let this = &mut tree[id].0;
+                if let ToggleState::Off = this.toggle_state {
+                    this.toggle_state = ToggleState::On;
+                    activate(true);
+                } else {
+                    this.toggle_state = ToggleState::Off;
+                    activate(false);
+                }
+                crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
+                    updated_props: vec![(
+                        id as i32,
+                        to_dbusmenu_variant(&tree, id, Some(0), ["toggle-state"].to_vec()).1,
+                    )],
+                    removed_props: vec![],
+                }
+            }),
+            ..Default::default()
+        }
+    }
+}
+
+pub struct RadioGroup {}
+
+pub struct RawMenuItem {
     pub r#type: ItemType,
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -42,11 +174,16 @@ pub struct MenuItem {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: ItemDisposition,
-    pub submenu: Vec<MenuItem>,
+    pub on_clicked: Rc<
+        Fn(
+            &mut Vec<(RawMenuItem, Vec<usize>)>,
+            usize,
+        ) -> crate::dbus_interface::DbusmenuItemsPropertiesUpdated,
+    >,
     pub vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
 }
 
-impl Clone for MenuItem {
+impl Clone for RawMenuItem {
     fn clone(&self) -> Self {
         let vendor_properties = self
             .vendor_properties
@@ -54,7 +191,7 @@ impl Clone for MenuItem {
             .map(|(k, v)| (k.clone(), Variant(v.0.box_clone())))
             .collect();
 
-        Self {
+        RawMenuItem {
             r#type: self.r#type.clone(),
             label: self.label.clone(),
             enabled: self.enabled,
@@ -65,7 +202,7 @@ impl Clone for MenuItem {
             toggle_type: self.toggle_type,
             toggle_state: self.toggle_state,
             disposition: self.disposition,
-            submenu: self.submenu.clone(),
+            on_clicked: self.on_clicked.clone(),
             vendor_properties,
         }
     }
@@ -76,11 +213,11 @@ macro_rules! if_not_default_then_insert {
         if_not_default_then_insert!($map, $item, $default, $filter, $property, (|r| r));
     };
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $to_refarg: tt) => {{
-        let name = stringify!($property);
+        let name = stringify!($property).replace('_', "-");
         if_not_default_then_insert!($map, $item, $default, $filter, $property, name, $to_refarg);
     }};
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $property_name: tt, $to_refarg: tt) => {
-        if ($filter.is_empty() || $filter.contains(&$property_name))
+        if ($filter.is_empty() || $filter.contains(&&*$property_name))
             && $item.$property != $default.$property
         {
             $map.insert(
@@ -91,7 +228,13 @@ macro_rules! if_not_default_then_insert {
     };
 }
 
-impl MenuItem {
+impl fmt::Debug for RawMenuItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Item {}", self.label)
+    }
+}
+
+impl RawMenuItem {
     pub fn to_dbus_map(
         &self,
         filter: &[&str],
@@ -100,7 +243,7 @@ impl MenuItem {
         let mut properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>> =
             HashMap::with_capacity(11);
 
-        let default = MenuItem::default();
+        let default = RawMenuItem::default();
         if_not_default_then_insert!(
             properties,
             item,
@@ -141,9 +284,9 @@ impl MenuItem {
     }
 }
 
-impl Default for MenuItem {
+impl Default for RawMenuItem {
     fn default() -> Self {
-        Self {
+        RawMenuItem {
             r#type: ItemType::Standard,
             label: String::default(),
             enabled: true,
@@ -154,7 +297,8 @@ impl Default for MenuItem {
             toggle_type: ToggleType::Null,
             toggle_state: ToggleState::Indeterminate,
             disposition: ItemDisposition::Normal,
-            submenu: Vec::default(),
+            //submenu: Vec::default(),
+            on_clicked: Rc::new(|_, _| Default::default()),
             vendor_properties: HashMap::default(),
         }
     }
@@ -189,7 +333,7 @@ impl fmt::Display for ItemType {
         use ItemType::*;
         match self {
             Standard => f.write_str("standard"),
-            Sepatator => f.write_str("sepatator"),
+            Sepatator => f.write_str("separator"),
             Vendor(vendor) => vendor.fmt(f),
         }
     }
@@ -253,25 +397,42 @@ impl fmt::Display for MenuStatus {
     }
 }
 
-pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(MenuItem, Vec<usize>)> {
-    let mut list: Vec<(MenuItem, Vec<usize>)> =
-        vec![(MenuItem::default(), Vec::with_capacity(items.len()))];
+pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
+    let mut list: Vec<(RawMenuItem, Vec<usize>)> =
+        vec![(RawMenuItem::default(), Vec::with_capacity(items.len()))];
 
     let mut stack = vec![(items, 0)]; // (menu, menu's parent)
 
     while let Some((mut current_menu, parent_index)) = stack.pop() {
         while !current_menu.is_empty() {
-            let mut item = current_menu.remove(0);
-            let mut submenu = Vec::new();
-            std::mem::swap(&mut item.submenu, &mut submenu);
-            let index = list.len();
-            list.push((item, Vec::with_capacity(submenu.len())));
-            // Add self to parent's submenu
-            list[parent_index].1.push(index);
-            if !submenu.is_empty() {
-                stack.push((current_menu, parent_index));
-                stack.push((submenu, index));
-                break;
+            match current_menu.remove(0) {
+                MenuItem::Standard(mut item) => {
+                    let submenu = std::mem::replace(&mut item.submenu, Default::default());
+                    let index = list.len();
+                    list.push((item.into(), Vec::with_capacity(submenu.len())));
+                    // Add self to parent's submenu
+                    list[parent_index].1.push(index);
+                    if !submenu.is_empty() {
+                        stack.push((current_menu, parent_index));
+                        stack.push((submenu, index));
+                        break;
+                    }
+                }
+                MenuItem::Sepatator => {
+                    let item = RawMenuItem {
+                        r#type: ItemType::Sepatator,
+                        ..Default::default()
+                    };
+                    let index = list.len();
+                    list.push((item, Vec::new()));
+                    list[parent_index].1.push(index);
+                }
+                MenuItem::Checkmark(item) => {
+                    let index = list.len();
+                    list.push((item.into(), Vec::new()));
+                    list[parent_index].1.push(index);
+                }
+                MenuItem::RadioGroup(group) => (),
             }
         }
     }
@@ -280,7 +441,7 @@ pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(MenuItem, Vec<usize>)> {
 }
 
 pub fn to_dbusmenu_variant(
-    menu: &[(MenuItem, Vec<usize>)],
+    menu: &[(RawMenuItem, Vec<usize>)],
     parent_id: usize,
     recursion_depth: Option<usize>,
     property_names: Vec<&str>,
@@ -354,115 +515,124 @@ mod test {
     #[test]
     fn test_menu_flatten() {
         let x = vec![
-            MenuItem {
+            StandardItem {
                 label: "a".into(),
                 submenu: vec![
-                    MenuItem {
+                    StandardItem {
                         label: "a1".into(),
-                        submenu: vec![MenuItem {
+                        submenu: vec![StandardItem {
                             label: "a1.1".into(),
                             ..Default::default()
-                        }],
+                        }
+                        .into()],
                         ..Default::default()
-                    },
-                    MenuItem {
+                    }
+                    .into(),
+                    StandardItem {
                         label: "a2".into(),
                         ..Default::default()
-                    },
+                    }
+                    .into(),
                 ],
                 ..Default::default()
-            },
-            MenuItem {
+            }
+            .into(),
+            StandardItem {
                 label: "b".into(),
                 ..Default::default()
-            },
-            MenuItem {
+            }
+            .into(),
+            StandardItem {
                 label: "c".into(),
                 submenu: vec![
-                    MenuItem {
+                    StandardItem {
                         label: "c1".into(),
                         ..Default::default()
-                    },
-                    MenuItem {
+                    }
+                    .into(),
+                    StandardItem {
                         label: "c2".into(),
-                        submenu: vec![MenuItem {
+                        submenu: vec![StandardItem {
                             label: "c2.1".into(),
                             ..Default::default()
-                        }],
+                        }
+                        .into()],
                         ..Default::default()
-                    },
+                    }
+                    .into(),
                 ],
                 ..Default::default()
-            },
+            }
+            .into(),
         ];
 
         let r = menu_flatten(x);
         let expect = vec![
             (
-                MenuItem {
+                RawMenuItem {
                     label: "".into(),
                     ..Default::default()
                 },
                 vec![1, 5, 6],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "a".into(),
                     ..Default::default()
                 },
                 vec![2, 4],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "a1".into(),
                     ..Default::default()
                 },
                 vec![3],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "a1.1".into(),
                     ..Default::default()
                 },
                 vec![],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "a2".into(),
                     ..Default::default()
                 },
                 vec![],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "b".into(),
                     ..Default::default()
                 },
                 vec![],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "c".into(),
                     ..Default::default()
                 },
                 vec![7, 8],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "c1".into(),
                     ..Default::default()
                 },
                 vec![],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "c2".into(),
                     ..Default::default()
                 },
                 vec![9],
             ),
             (
-                MenuItem {
+                RawMenuItem {
                     label: "c2.1".into(),
                     ..Default::default()
                 },

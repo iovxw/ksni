@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 use dbus::arg::{RefArg, Variant};
+use dbus::SignalArgs;
 
 pub mod dbus_interface;
 pub mod dbusmenu;
@@ -20,11 +22,12 @@ pub trait Methods {
     fn properties(&self) -> &sni::Properties;
 }
 
-#[derive(Clone, Default)]
 struct TrayService<T: Methods> {
     inner: T,
     // A list of menu item and it's submenu
-    list: Vec<(dbusmenu::MenuItem, Vec<usize>)>,
+    list: RefCell<Vec<(dbusmenu::RawMenuItem, Vec<usize>)>>,
+    conn: Rc<dbus::Connection>,
+    menu_path: dbus::Path<'static>,
 }
 
 impl<T: Methods> fmt::Debug for TrayService<T> {
@@ -147,7 +150,7 @@ impl<T: Methods> dbus_interface::Dbusmenu for TrayService<T> {
         Ok((
             0,
             crate::dbusmenu::to_dbusmenu_variant(
-                &self.list,
+                &self.list.borrow(),
                 parent_id as usize,
                 if recursion_depth < 0 {
                     None
@@ -165,7 +168,14 @@ impl<T: Methods> dbus_interface::Dbusmenu for TrayService<T> {
     ) -> Result<Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>, Self::Err> {
         let r = ids
             .into_iter()
-            .map(|id| (id, self.list[id as usize].0.to_dbus_map(&property_names)))
+            .map(|id| {
+                (
+                    id,
+                    self.list.borrow()[id as usize]
+                        .0
+                        .to_dbus_map(&property_names),
+                )
+            })
             .collect();
         Ok(r)
     }
@@ -183,7 +193,14 @@ impl<T: Methods> dbus_interface::Dbusmenu for TrayService<T> {
         data: Variant<Box<dyn RefArg>>,
         timestamp: u32,
     ) -> Result<(), Self::Err> {
-        dbg!((id, event_id, data, timestamp));
+        match event_id {
+            "clicked" => {
+                let activate = self.list.borrow()[id as usize].0.on_clicked.clone();
+                let m = (activate)(&mut self.list.borrow_mut(), id as usize);
+                self.conn.send(m.to_emit_message(&self.menu_path)).unwrap();
+            }
+            _ => (),
+        }
         Ok(())
     }
     fn event_group(
@@ -267,38 +284,42 @@ mod tests {
         p.icon_name = "desktop".to_owned();
         let foo = Foo { p };
 
+        use dbusmenu::*;
         let tray = Rc::new(TrayService {
             inner: foo,
-            list: dbusmenu::menu_flatten(vec![
-                dbusmenu::MenuItem {
+            list: RefCell::new(dbusmenu::menu_flatten(vec![
+                StandardItem {
                     label: "a".into(),
                     submenu: vec![
-                        dbusmenu::MenuItem {
+                        StandardItem {
                             label: "a1".into(),
-                            submenu: vec![
-                                dbusmenu::MenuItem {
-                                    label: "a1.1".into(),
-                                    ..Default::default()
-                                },
-                                dbusmenu::MenuItem {
-                                    label: "a1.2".into(),
-                                    ..Default::default()
-                                },
-                            ],
+                            submenu: vec![StandardItem {
+                                label: "a1.1".into(),
+                                activate: Box::new(|| println!("a")),
+                                ..Default::default()
+                            }
+                            .into()],
                             ..Default::default()
-                        },
-                        dbusmenu::MenuItem {
+                        }
+                        .into(),
+                        StandardItem {
                             label: "a2".into(),
                             ..Default::default()
-                        },
+                        }
+                        .into(),
                     ],
                     ..Default::default()
-                },
-                dbusmenu::MenuItem {
+                }
+                .into(),
+                MenuItem::Sepatator,
+                CheckmarkItem {
                     label: "b".into(),
                     ..Default::default()
-                },
-            ]),
+                }
+                .into(),
+            ])),
+            conn: conn.clone(),
+            menu_path: MENU_PATH.into(),
         });
 
         let tray1 = tray.clone();

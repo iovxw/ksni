@@ -16,12 +16,10 @@ pub struct Properties {
     pub attention_icon_pixmap: Vec<Icon>,
     pub attention_moive_name: String,
     pub tool_tip: ToolTip,
-
-    conn: Rc<dbus::Connection>,
 }
 
 impl Properties {
-    pub fn new(conn: Rc<dbus::Connection>) -> Self {
+    pub fn new() -> Self {
         Properties {
             category: Category::ApplicationStatus,
             id: Default::default(),
@@ -36,7 +34,6 @@ impl Properties {
             attention_icon_pixmap: Default::default(),
             attention_moive_name: Default::default(),
             tool_tip: Default::default(),
-            conn,
         }
     }
 }

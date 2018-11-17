@@ -280,7 +280,7 @@ mod tests {
                 &self.p
             }
         }
-        let mut p = sni::Properties::new(conn.clone());
+        let mut p = sni::Properties::new();
         p.icon_name = "desktop".to_owned();
         let foo = Foo { p };
 

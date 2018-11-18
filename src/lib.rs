@@ -8,8 +8,8 @@ use dbus::arg::{RefArg, Variant};
 use dbus::SignalArgs;
 
 pub mod dbus_interface;
-pub mod dbusmenu;
-pub mod sni;
+pub mod menu;
+pub mod tray;
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
@@ -19,13 +19,13 @@ pub trait Methods {
     fn activate(&self, x: i32, y: i32) -> Result<(), Self::Err>;
     fn secondary_activate(&self, x: i32, y: i32) -> Result<(), Self::Err>;
     fn scroll(&self, delta: i32, dir: &str) -> Result<(), Self::Err>;
-    fn properties(&self) -> &sni::Properties;
+    fn properties(&self) -> &tray::Properties;
 }
 
 struct TrayService<T: Methods> {
     inner: T,
     // A list of menu item and it's submenu
-    list: RefCell<Vec<(dbusmenu::RawMenuItem, Vec<usize>)>>,
+    list: RefCell<Vec<(menu::RawMenuItem, Vec<usize>)>>,
     conn: Rc<dbus::Connection>,
     menu_path: dbus::Path<'static>,
 }
@@ -149,7 +149,7 @@ impl<T: Methods> dbus_interface::Dbusmenu for TrayService<T> {
     > {
         Ok((
             0,
-            crate::dbusmenu::to_dbusmenu_variant(
+            crate::menu::to_dbusmenu_variant(
                 &self.list.borrow(),
                 parent_id as usize,
                 if recursion_depth < 0 {
@@ -263,7 +263,7 @@ mod tests {
         let conn = Rc::new(conn);
 
         struct Foo {
-            p: sni::Properties,
+            p: tray::Properties,
         }
         impl Methods for Foo {
             type Err = String;
@@ -276,18 +276,18 @@ mod tests {
             fn scroll(&self, delta: i32, dir: &str) -> Result<(), Self::Err> {
                 Ok(())
             }
-            fn properties(&self) -> &sni::Properties {
+            fn properties(&self) -> &tray::Properties {
                 &self.p
             }
         }
-        let mut p = sni::Properties::new();
+        let mut p = tray::Properties::new();
         p.icon_name = "desktop".to_owned();
         let foo = Foo { p };
 
-        use dbusmenu::*;
+        use menu::*;
         let tray = Rc::new(TrayService {
             inner: foo,
-            list: RefCell::new(dbusmenu::menu_flatten(vec![
+            list: RefCell::new(menu::menu_flatten(vec![
                 StandardItem {
                     label: "a".into(),
                     submenu: vec![

@@ -18,6 +18,7 @@ pub struct StandardItem {
     pub icon_name: String,
     pub icon_data: Vec<u8>,
     pub shortcut: Vec<Vec<String>>,
+    pub disposition: ItemDisposition,
     pub submenu: Vec<MenuItem>,
     pub activate: Box<Fn()>,
 }
@@ -31,6 +32,7 @@ impl Default for StandardItem {
             icon_name: String::default(),
             icon_data: Vec::default(),
             shortcut: Vec::default(),
+            disposition: ItemDisposition::Normal,
             submenu: Vec::default(),
             activate: Box::new(|| {}),
         }
@@ -54,6 +56,7 @@ impl From<StandardItem> for RawMenuItem {
             icon_name: item.icon_name,
             icon_data: item.icon_data,
             shortcut: item.shortcut,
+            disposition: item.disposition,
             on_clicked: Rc::new(move |_, _| {
                 (activate)();
                 Default::default()
@@ -71,6 +74,7 @@ pub struct CheckmarkItem {
     pub icon_name: String,
     pub icon_data: Vec<u8>,
     pub shortcut: Vec<Vec<String>>,
+    pub disposition: ItemDisposition,
     pub activate: Box<Fn(bool)>,
 }
 
@@ -84,6 +88,7 @@ impl Default for CheckmarkItem {
             icon_name: String::default(),
             icon_data: Vec::default(),
             shortcut: Vec::default(),
+            disposition: ItemDisposition::Normal,
             activate: Box::new(|_| {}),
         }
     }
@@ -112,6 +117,7 @@ impl From<CheckmarkItem> for RawMenuItem {
             } else {
                 ToggleState::Off
             },
+            disposition: item.disposition,
             on_clicked: Rc::new(move |tree, id| {
                 let this = &mut tree[id].0;
                 if let ToggleState::Off = this.toggle_state {

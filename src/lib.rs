@@ -288,10 +288,10 @@ mod tests {
         let tray = Rc::new(TrayService {
             inner: foo,
             list: RefCell::new(menu::menu_flatten(vec![
-                StandardItem {
+                SubMenu {
                     label: "a".into(),
                     submenu: vec![
-                        StandardItem {
+                        SubMenu {
                             label: "a1".into(),
                             submenu: vec![StandardItem {
                                 label: "a1.1".into(),

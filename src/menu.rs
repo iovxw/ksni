@@ -8,6 +8,7 @@ pub enum MenuItem {
     Standard(StandardItem),
     Sepatator,
     Checkmark(CheckmarkItem),
+    SubMenu(SubMenu),
     RadioGroup(RadioGroup),
 }
 
@@ -19,7 +20,6 @@ pub struct StandardItem {
     pub icon_data: Vec<u8>,
     pub shortcut: Vec<Vec<String>>,
     pub disposition: ItemDisposition,
-    pub submenu: Vec<MenuItem>,
     pub activate: Box<Fn()>,
 }
 
@@ -33,7 +33,6 @@ impl Default for StandardItem {
             icon_data: Vec::default(),
             shortcut: Vec::default(),
             disposition: ItemDisposition::Normal,
-            submenu: Vec::default(),
             activate: Box::new(|| {}),
         }
     }
@@ -61,6 +60,55 @@ impl From<StandardItem> for RawMenuItem {
                 (activate)();
                 Default::default()
             }),
+            ..Default::default()
+        }
+    }
+}
+
+pub struct SubMenu {
+    pub label: String,
+    pub enabled: bool,
+    pub visible: bool,
+    pub icon_name: String,
+    pub icon_data: Vec<u8>,
+    pub shortcut: Vec<Vec<String>>,
+    pub disposition: ItemDisposition,
+    pub submenu: Vec<MenuItem>,
+}
+
+impl Default for SubMenu {
+    fn default() -> Self {
+        Self {
+            label: String::default(),
+            enabled: true,
+            visible: true,
+            icon_name: String::default(),
+            icon_data: Vec::default(),
+            shortcut: Vec::default(),
+            disposition: ItemDisposition::Normal,
+            submenu: Vec::default(),
+        }
+    }
+}
+
+impl From<SubMenu> for MenuItem {
+    fn from(item: SubMenu) -> Self {
+        MenuItem::SubMenu(item)
+    }
+}
+
+impl From<SubMenu> for RawMenuItem {
+    fn from(item: SubMenu) -> Self {
+        Self {
+            r#type: ItemType::Standard,
+            label: item.label,
+            enabled: item.enabled,
+            visible: item.visible,
+            icon_name: item.icon_name,
+            icon_data: item.icon_data,
+            shortcut: item.shortcut,
+            disposition: item.disposition,
+            on_clicked: Rc::new(move |_, _| Default::default()),
             ..Default::default()
         }
     }
@@ -412,17 +460,11 @@ pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
     while let Some((mut current_menu, parent_index)) = stack.pop() {
         while !current_menu.is_empty() {
             match current_menu.remove(0) {
-                MenuItem::Standard(mut item) => {
-                    let submenu = std::mem::replace(&mut item.submenu, Default::default());
+                MenuItem::Standard(item) => {
                     let index = list.len();
-                    list.push((item.into(), Vec::with_capacity(submenu.len())));
+                    list.push((item.into(), Vec::new()));
                     // Add self to parent's submenu
                     list[parent_index].1.push(index);
-                    if !submenu.is_empty() {
-                        stack.push((current_menu, parent_index));
-                        stack.push((submenu, index));
-                        break;
-                    }
                 }
                 MenuItem::Sepatator => {
                     let item = RawMenuItem {
@@ -437,6 +479,17 @@ pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
                     let index = list.len();
                     list.push((item.into(), Vec::new()));
                     list[parent_index].1.push(index);
+                }
+                MenuItem::SubMenu(mut item) => {
+                    let submenu = std::mem::replace(&mut item.submenu, Default::default());
+                    let index = list.len();
+                    list.push((item.into(), Vec::with_capacity(submenu.len())));
+                    list[parent_index].1.push(index);
+                    if !submenu.is_empty() {
+                        stack.push((current_menu, parent_index));
+                        stack.push((submenu, index));
+                        break;
+                    }
                 }
                 MenuItem::RadioGroup(group) => (),
             }
@@ -521,10 +574,10 @@ mod test {
     #[test]
     fn test_menu_flatten() {
         let x = vec![
-            StandardItem {
+            SubMenu {
                 label: "a".into(),
                 submenu: vec![
-                    StandardItem {
+                    SubMenu {
                         label: "a1".into(),
                         submenu: vec![StandardItem {
                             label: "a1.1".into(),
@@ -548,7 +601,7 @@ mod test {
                 ..Default::default()
             }
             .into(),
-            StandardItem {
+            SubMenu {
                 label: "c".into(),
                 submenu: vec![
                     StandardItem {
@@ -556,7 +609,7 @@ mod test {
                         ..Default::default()
                     }
                     .into(),
-                    StandardItem {
+                    SubMenu {
                         label: "c2".into(),
                         submenu: vec![StandardItem {
                             label: "c2.1".into(),

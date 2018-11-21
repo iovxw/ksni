@@ -4,6 +4,63 @@ use std::rc::Rc;
 
 use dbus::arg::{RefArg, Variant};
 
+pub struct Properties {
+    /// Represents the way the text direction of the application.  This
+    /// allows the server to handle mismatches intelligently.
+    pub text_direction: TextDirection,
+    /// Tells if the menus are in a normal state or they believe that they
+    /// could use some attention.  Cases for showing them would be if help
+    /// were referring to them or they accessors were being highlighted.
+    /// This property can have two values: "normal" in almost all cases and
+    /// "notice" when they should have a higher priority to be shown.
+    pub status: Status,
+    /// A list of directories that should be used for finding icons using
+    /// the icon naming spec.  Idealy there should only be one for the icon
+    /// theme, but additional ones are often added by applications for
+    /// app specific icons.
+    pub icon_theme_path: Vec<String>,
+}
+
+impl Default for Properties {
+    fn default() -> Self {
+        Self {
+            text_direction: TextDirection::LeftToRight,
+            status: Status::Normal,
+            icon_theme_path: Default::default(),
+        }
+    }
+}
+
+pub enum TextDirection {
+    LeftToRight,
+    RightToLeft,
+}
+
+impl fmt::Display for TextDirection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let r = match *self {
+            TextDirection::LeftToRight => "ltr",
+            TextDirection::RightToLeft => "rtl",
+        };
+        f.write_str(r)
+    }
+}
+
+pub enum Status {
+    Normal,
+    Notice,
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let r = match *self {
+            Status::Normal => "normal",
+            Status::Notice => "notice",
+        };
+        f.write_str(r)
+    }
+}
+
 pub enum MenuItem {
     Standard(StandardItem),
     Sepatator,

@@ -4,11 +4,11 @@ A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 
 ## Todo
  - [x] org.kde.StatusNotifierItem
- - [ ] com.canonical.dbusmenu
- - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
- - [ ] org.freedesktop.DBus.Peer
+ - [x] com.canonical.dbusmenu
  - [x] org.freedesktop.DBus.Introspectable
  - [x] org.freedesktop.DBus.Properties
+ - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
+ - [ ] radio item
 
 ## License
 

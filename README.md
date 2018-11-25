@@ -7,8 +7,9 @@ A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
  - [x] com.canonical.dbusmenu
  - [x] org.freedesktop.DBus.Introspectable
  - [x] org.freedesktop.DBus.Properties
- - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
  - [ ] radio item
+ - [ ] documents
+ - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
 
 ## License
 

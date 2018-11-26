@@ -6,7 +6,7 @@ fn main() {
         type Err = std::convert::Infallible;
         fn tray_properties() -> tray::Properties {
             tray::Properties {
-                icon_name: "desktop".to_owned(),
+                icon_name: "music".to_owned(),
                 ..Default::default()
             }
         }
@@ -18,12 +18,18 @@ fn main() {
                     submenu: vec![
                         SubMenu {
                             label: "a1".into(),
-                            submenu: vec![StandardItem {
-                                label: "a1.1".into(),
-                                activate: Box::new(|| println!("a")),
-                                ..Default::default()
-                            }
-                            .into()],
+                            submenu: vec![
+                                StandardItem {
+                                    label: "a1.1".into(),
+                                    ..Default::default()
+                                }
+                                .into(),
+                                StandardItem {
+                                    label: "a1.2".into(),
+                                    ..Default::default()
+                                }
+                                .into(),
+                            ],
                             ..Default::default()
                         }
                         .into(),
@@ -38,7 +44,16 @@ fn main() {
                 .into(),
                 MenuItem::Sepatator,
                 CheckmarkItem {
-                    label: "b".into(),
+                    label: "Checkable".into(),
+                    checked: true,
+                    activate: Box::new(|checked| println!("{}", checked)),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "Exit".into(),
+                    icon_name: "application-exit".into(),
+                    activate: Box::new(|| std::process::exit(0)),
                     ..Default::default()
                 }
                 .into(),

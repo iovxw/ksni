@@ -180,7 +180,7 @@ pub struct CheckmarkItem {
     pub icon_data: Vec<u8>,
     pub shortcut: Vec<Vec<String>>,
     pub disposition: ItemDisposition,
-    pub activate: Box<Fn(bool)>,
+    pub activate: Box<Fn(bool) -> bool>,
 }
 
 impl Default for CheckmarkItem {
@@ -194,7 +194,7 @@ impl Default for CheckmarkItem {
             icon_data: Vec::default(),
             shortcut: Vec::default(),
             disposition: ItemDisposition::Normal,
-            activate: Box::new(|_| {}),
+            activate: Box::new(|checked| !checked),
         }
     }
 }
@@ -225,19 +225,25 @@ impl From<CheckmarkItem> for RawMenuItem {
             disposition: item.disposition,
             on_clicked: Rc::new(move |tree, id| {
                 let this = &mut tree[id].0;
-                if let ToggleState::Off = this.toggle_state {
-                    this.toggle_state = ToggleState::On;
-                    activate(true);
+                let checked = this.toggle_state != ToggleState::Off;
+                let new_state = if activate(checked) {
+                    ToggleState::On
                 } else {
-                    this.toggle_state = ToggleState::Off;
-                    activate(false);
-                }
-                crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
-                    updated_props: vec![(
-                        id as i32,
-                        to_dbusmenu_variant(&tree, id, Some(0), ["toggle-state"].to_vec()).1,
-                    )],
-                    removed_props: vec![],
+                    ToggleState::Off
+                };;
+                if new_state != this.toggle_state {
+                    this.toggle_state = new_state;
+                    let mut props = HashMap::with_capacity(1);
+                    props.insert(
+                        "toggle-state".into(),
+                        Variant(Box::new(new_state as i32) as Box<dyn RefArg>),
+                    );
+                    crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
+                        updated_props: vec![(id as i32, props)],
+                        removed_props: vec![],
+                    }
+                } else {
+                    Default::default()
                 }
             }),
             ..Default::default()
@@ -549,6 +555,7 @@ pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
                         break;
                     }
                 }
+                // TODO
                 MenuItem::RadioGroup(group) => (),
             }
         }

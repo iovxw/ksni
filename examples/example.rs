@@ -46,7 +46,6 @@ fn main() {
                 CheckmarkItem {
                     label: "Checkable".into(),
                     checked: true,
-                    activate: Box::new(|checked| println!("{}", checked)),
                     ..Default::default()
                 }
                 .into(),

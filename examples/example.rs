@@ -1,8 +1,8 @@
 use ksni::{self, menu, tray};
 
 fn main() {
-    struct Foo;
-    impl ksni::Tray for Foo {
+    struct MyTray;
+    impl ksni::Tray for MyTray {
         type Err = std::convert::Infallible;
         fn tray_properties() -> tray::Properties {
             tray::Properties {
@@ -60,5 +60,5 @@ fn main() {
         }
     }
 
-    ksni::run(Foo);
+    ksni::run(MyTray);
 }

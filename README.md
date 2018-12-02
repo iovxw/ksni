@@ -4,7 +4,7 @@ A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 
 ## Example
 
-```
+```rust
 use ksni::{self, menu, tray};
 
 fn main() {

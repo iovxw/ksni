@@ -1,4 +1,8 @@
-# ksni [![Build Status](https://travis-ci.com/iovxw/ksni.svg?branch=master)](https://travis-ci.com/iovxw/ksni)
+# ksni 
+
+[![Build Status](https://travis-ci.com/iovxw/ksni.svg?branch=master)](https://travis-ci.com/iovxw/ksni)
+[![Crates](https://img.shields.io/crates/v/ksni.svg)](https://crates.io/crates/ksni)
+[![Documentation](https://docs.rs/ksni/badge.svg)](https://docs.rs/ksni)
 
 A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 

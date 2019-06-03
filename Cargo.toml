@@ -3,6 +3,16 @@ name = "ksni"
 version = "0.0.0"
 authors = ["iovxw <iovxw@outlook.com>"]
 edition = "2018"
+description = """
+A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
+"""
+repository = "https://github.com/iovxw/ksni"
+keywords = ["systray", "linux", "gui"]
+categories = ["api-bindings"]
+
+[badges]
+travis-ci = { repository = "iovxw/ksni" }
+maintenance = { status = "experimental" }
 
 [dependencies]
 dbus = "0.6"

@@ -43,6 +43,27 @@ fn main() {
                 }
                 .into(),
                 MenuItem::Sepatator,
+                RadioGroup {
+                    select: Box::new(|prev, current| {
+                        dbg!(prev, current);
+                    }),
+                    options: vec![
+                        RadioItem {
+                            label: "Option 0".into(),
+                            ..Default::default()
+                        },
+                        RadioItem {
+                            label: "Option 1".into(),
+                            ..Default::default()
+                        },
+                        RadioItem {
+                            label: "Option 2".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                }
+                .into(),
                 CheckmarkItem {
                     label: "Checkable".into(),
                     checked: true,

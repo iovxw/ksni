@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -251,8 +252,51 @@ impl From<CheckmarkItem> for RawMenuItem {
     }
 }
 
-// TODO
-pub struct RadioGroup {}
+pub struct RadioGroup {
+    pub selected: usize,
+    pub select: Box<Fn(usize, usize)>,
+    pub options: Vec<RadioItem>,
+}
+
+impl Default for RadioGroup {
+    fn default() -> Self {
+        Self {
+            selected: 0,
+            select: Box::new(|_, _| {}),
+            options: Default::default(),
+        }
+    }
+}
+
+impl From<RadioGroup> for MenuItem {
+    fn from(item: RadioGroup) -> Self {
+        MenuItem::RadioGroup(item)
+    }
+}
+
+pub struct RadioItem {
+    pub label: String,
+    pub enabled: bool,
+    pub visible: bool,
+    pub icon_name: String,
+    pub icon_data: Vec<u8>,
+    pub shortcut: Vec<Vec<String>>,
+    pub disposition: ItemDisposition,
+}
+
+impl Default for RadioItem {
+    fn default() -> Self {
+        Self {
+            label: String::default(),
+            enabled: true,
+            visible: true,
+            icon_name: String::default(),
+            icon_data: Vec::default(),
+            shortcut: Vec::default(),
+            disposition: ItemDisposition::Normal,
+        }
+    }
+}
 
 pub struct RawMenuItem {
     pub r#type: ItemType,
@@ -555,8 +599,68 @@ pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
                         break;
                     }
                 }
-                // TODO
-                MenuItem::RadioGroup(group) => (),
+                MenuItem::RadioGroup(group) => {
+                    let offset = list.len();
+                    let on_selected = Rc::new(group.select);
+                    let current_selected = Rc::new(Cell::new(offset + group.selected));
+                    for (idx, option) in group.options.into_iter().enumerate() {
+                        let on_selected = on_selected.clone();
+                        let current_seleted = current_selected.clone();
+                        let item = RawMenuItem {
+                            r#type: ItemType::Standard,
+                            label: option.label,
+                            enabled: option.enabled,
+                            visible: option.visible,
+                            icon_name: option.icon_name,
+                            icon_data: option.icon_data,
+                            shortcut: option.shortcut,
+                            toggle_type: ToggleType::Radio,
+                            toggle_state: if idx == group.selected {
+                                ToggleState::On
+                            } else {
+                                ToggleState::Off
+                            },
+                            disposition: option.disposition,
+                            on_clicked: Rc::new(move |tree, id| {
+                                let this = &mut tree[id].0;
+                                if this.toggle_state == ToggleState::Off {
+                                    let prev_selected = current_seleted.get();
+                                    current_seleted.set(id);
+                                    this.toggle_state = ToggleState::On;
+                                    tree[prev_selected].0.toggle_state = ToggleState::Off;
+                                    (on_selected)(prev_selected - offset, id - offset);
+                                    let mut props_self = HashMap::with_capacity(1);
+                                    props_self.insert(
+                                        "toggle-state".into(),
+                                        Variant(
+                                            Box::new(ToggleState::On as i32) as Box<dyn RefArg>
+                                        ),
+                                    );
+                                    let mut props_prev = HashMap::with_capacity(1);
+                                    props_prev.insert(
+                                        "toggle-state".into(),
+                                        Variant(
+                                            Box::new(ToggleState::Off as i32) as Box<dyn RefArg>
+                                        ),
+                                    );
+                                    crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
+                                        updated_props: vec![
+                                            (id as i32, props_self),
+                                            (prev_selected as i32, props_prev),
+                                        ],
+                                        removed_props: vec![],
+                                    }
+                                } else {
+                                    Default::default()
+                                }
+                            }),
+                            ..Default::default()
+                        };
+                        let index = list.len();
+                        list.push((item, Vec::new()));
+                        list[parent_index].1.push(index);
+                    }
+                }
             }
         }
     }

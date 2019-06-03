@@ -82,7 +82,7 @@ Will create a system tray like this:
  - [x] com.canonical.dbusmenu
  - [x] org.freedesktop.DBus.Introspectable
  - [x] org.freedesktop.DBus.Properties
- - [ ] radio item
+ - [X] radio item
  - [ ] documents
  - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
  - [ ] mutable menu items

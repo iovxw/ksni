@@ -6,7 +6,7 @@ use std::rc::Rc;
 use dbus::arg::{RefArg, Variant};
 use dbus::SignalArgs;
 
-pub mod dbus_interface;
+mod dbus_interface;
 pub mod menu;
 pub mod tray;
 

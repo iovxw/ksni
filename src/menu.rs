@@ -397,7 +397,7 @@ impl fmt::Debug for RawMenuItem {
 }
 
 impl RawMenuItem {
-    pub fn to_dbus_map(
+    pub(crate) fn to_dbus_map(
         &self,
         filter: &[&str],
     ) -> HashMap<String, Variant<Box<dyn RefArg + 'static>>> {
@@ -559,7 +559,7 @@ impl fmt::Display for MenuStatus {
     }
 }
 
-pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
+pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
     let mut list: Vec<(RawMenuItem, Vec<usize>)> =
         vec![(RawMenuItem::default(), Vec::with_capacity(items.len()))];
 
@@ -668,7 +668,7 @@ pub fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
     list
 }
 
-pub fn to_dbusmenu_variant(
+pub(crate) fn to_dbusmenu_variant(
     menu: &[(RawMenuItem, Vec<usize>)],
     parent_id: usize,
     recursion_depth: Option<usize>,

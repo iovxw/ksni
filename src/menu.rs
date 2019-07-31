@@ -78,7 +78,7 @@ pub struct StandardItem {
     pub icon_data: Vec<u8>,
     pub shortcut: Vec<Vec<String>>,
     pub disposition: ItemDisposition,
-    pub activate: Box<Fn()>,
+    pub activate: Box<dyn Fn()>,
 }
 
 impl Default for StandardItem {
@@ -181,7 +181,7 @@ pub struct CheckmarkItem {
     pub icon_data: Vec<u8>,
     pub shortcut: Vec<Vec<String>>,
     pub disposition: ItemDisposition,
-    pub activate: Box<Fn(bool) -> bool>,
+    pub activate: Box<dyn Fn(bool) -> bool>,
 }
 
 impl Default for CheckmarkItem {
@@ -231,7 +231,7 @@ impl From<CheckmarkItem> for RawMenuItem {
                     ToggleState::On
                 } else {
                     ToggleState::Off
-                };;
+                };
                 if new_state != this.toggle_state {
                     this.toggle_state = new_state;
                     let mut props = HashMap::with_capacity(1);
@@ -254,7 +254,7 @@ impl From<CheckmarkItem> for RawMenuItem {
 
 pub struct RadioGroup {
     pub selected: usize,
-    pub select: Box<Fn(usize, usize)>,
+    pub select: Box<dyn Fn(usize, usize)>,
     pub options: Vec<RadioItem>,
 }
 
@@ -337,7 +337,7 @@ pub struct RawMenuItem {
     /// user should be presented.
     pub disposition: ItemDisposition,
     pub on_clicked: Rc<
-        Fn(
+        dyn Fn(
             &mut Vec<(RawMenuItem, Vec<usize>)>,
             usize,
         ) -> crate::dbus_interface::DbusmenuItemsPropertiesUpdated,

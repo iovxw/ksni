@@ -301,7 +301,7 @@ pub fn run<T: Tray + 'static>(tray: T) {
         tray_service_clone.clone() as Rc<dyn dbus_interface::StatusNotifierItem<Err = _>>
     });
     let menu_interface = dbus_interface::dbusmenu_server(&f, (), move |_| {
-        tray_service.clone() as Rc<dbus_interface::Dbusmenu<Err = _>>
+        tray_service.clone() as Rc<dyn dbus_interface::Dbusmenu<Err = _>>
     });
     let tree = f
         .tree(())

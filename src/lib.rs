@@ -2,11 +2,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
+use std::time::Duration;
 
 use dbus::arg::{RefArg, Variant};
-use dbus::SignalArgs;
+use dbus::channel::Sender;
+use dbus::message::SignalArgs;
 
 mod dbus_interface;
+mod freedesktop;
 pub mod menu;
 pub mod tray;
 
@@ -44,7 +47,7 @@ struct TrayService<T: Tray> {
     menu_properties: menu::Properties,
     // A list of menu item and it's submenu
     menu: RefCell<Vec<(menu::RawMenuItem, Vec<usize>)>>,
-    conn: Rc<dbus::Connection>,
+    conn: Rc<dbus::blocking::Connection>,
     menu_path: dbus::Path<'static>,
 }
 
@@ -55,55 +58,54 @@ impl<T: Tray> fmt::Debug for TrayService<T> {
 }
 
 impl<T: Tray> dbus_interface::StatusNotifierItem for TrayService<T> {
-    type Err = dbus::tree::MethodErr;
-    fn activate(&self, x: i32, y: i32) -> Result<(), Self::Err> {
+    fn activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
         self.inner
             .activate(x, y)
             .map_err(|e| dbus::tree::MethodErr::failed(&e))
     }
-    fn secondary_activate(&self, x: i32, y: i32) -> Result<(), Self::Err> {
+    fn secondary_activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
         self.inner
             .secondary_activate(x, y)
             .map_err(|e| dbus::tree::MethodErr::failed(&e))
     }
-    fn scroll(&self, delta: i32, dir: &str) -> Result<(), Self::Err> {
+    fn scroll(&self, delta: i32, dir: &str) -> Result<(), dbus::tree::MethodErr> {
         self.inner
             .scroll(delta, dir)
             .map_err(|e| dbus::tree::MethodErr::failed(&e))
     }
-    fn context_menu(&self, x: i32, y: i32) -> Result<(), Self::Err> {
+    fn context_menu(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
         self.inner
             .context_menu(x, y)
             .map_err(|e| dbus::tree::MethodErr::failed(&e))
     }
-    fn get_item_is_menu(&self) -> Result<bool, Self::Err> {
+    fn get_item_is_menu(&self) -> Result<bool, dbus::tree::MethodErr> {
         Ok(self.tray_properties.item_is_menu)
     }
-    fn get_category(&self) -> Result<String, Self::Err> {
+    fn get_category(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.category.to_string())
     }
-    fn get_id(&self) -> Result<String, Self::Err> {
+    fn get_id(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.id.clone())
     }
-    fn get_title(&self) -> Result<String, Self::Err> {
+    fn get_title(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.title.clone())
     }
-    fn get_status(&self) -> Result<String, Self::Err> {
+    fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.status.to_string())
     }
-    fn get_window_id(&self) -> Result<i32, Self::Err> {
+    fn get_window_id(&self) -> Result<i32, dbus::tree::MethodErr> {
         Ok(self.tray_properties.window_id.clone())
     }
-    fn get_menu(&self) -> Result<dbus::Path<'static>, Self::Err> {
+    fn get_menu(&self) -> Result<dbus::Path<'static>, dbus::tree::MethodErr> {
         Ok(MENU_PATH.into())
     }
-    fn get_icon_name(&self) -> Result<String, Self::Err> {
+    fn get_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.icon_name.clone())
     }
-    fn get_icon_theme_path(&self) -> Result<String, Self::Err> {
+    fn get_icon_theme_path(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.icon_theme_path.clone())
     }
-    fn get_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, Self::Err> {
+    fn get_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
         Ok(self
             .tray_properties
             .icon_pixmap
@@ -112,10 +114,10 @@ impl<T: Tray> dbus_interface::StatusNotifierItem for TrayService<T> {
             .map(Into::into)
             .collect())
     }
-    fn get_overlay_icon_name(&self) -> Result<String, Self::Err> {
+    fn get_overlay_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.overlay_icon_name.clone())
     }
-    fn get_overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, Self::Err> {
+    fn get_overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
         Ok(self
             .tray_properties
             .overlay_icon_pixmap
@@ -124,10 +126,10 @@ impl<T: Tray> dbus_interface::StatusNotifierItem for TrayService<T> {
             .map(Into::into)
             .collect())
     }
-    fn get_attention_icon_name(&self) -> Result<String, Self::Err> {
+    fn get_attention_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.attention_icon_name.clone())
     }
-    fn get_attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, Self::Err> {
+    fn get_attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
         Ok(self
             .tray_properties
             .attention_icon_pixmap
@@ -136,18 +138,17 @@ impl<T: Tray> dbus_interface::StatusNotifierItem for TrayService<T> {
             .map(Into::into)
             .collect())
     }
-    fn get_attention_movie_name(&self) -> Result<String, Self::Err> {
+    fn get_attention_movie_name(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.tray_properties.attention_movie_name.clone())
     }
     fn get_tool_tip(
         &self,
-    ) -> Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String), Self::Err> {
+    ) -> Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String), dbus::tree::MethodErr> {
         Ok(self.tray_properties.tool_tip.clone().into())
     }
 }
 
 impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
-    type Err = dbus::tree::MethodErr;
     fn get_layout(
         &self,
         parent_id: i32,
@@ -162,7 +163,7 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
                 Vec<Variant<Box<dyn RefArg + 'static>>>,
             ),
         ),
-        Self::Err,
+        dbus::tree::MethodErr,
     > {
         Ok((
             0,
@@ -182,7 +183,10 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
         &self,
         ids: Vec<i32>,
         property_names: Vec<&str>,
-    ) -> Result<Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>, Self::Err> {
+    ) -> Result<
+        Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>,
+        dbus::tree::MethodErr,
+    > {
         let r = ids
             .into_iter()
             .map(|id| {
@@ -200,7 +204,7 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
         &self,
         id: i32,
         name: &str,
-    ) -> Result<Variant<Box<dyn RefArg + 'static>>, Self::Err> {
+    ) -> Result<Variant<Box<dyn RefArg + 'static>>, dbus::tree::MethodErr> {
         // FIXME
         Err(dbus::tree::MethodErr::failed(&"unimplemented"))
     }
@@ -210,12 +214,16 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
         event_id: &str,
         _data: Variant<Box<dyn RefArg>>,
         _timestamp: u32,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), dbus::tree::MethodErr> {
         match event_id {
             "clicked" => {
                 let activate = self.menu.borrow()[id as usize].0.on_clicked.clone();
                 let m = (activate)(&mut self.menu.borrow_mut(), id as usize);
-                self.conn.send(m.to_emit_message(&self.menu_path)).unwrap();
+                if let Some(msg) = m {
+                    self.conn
+                        .send(msg.to_emit_message(&self.menu_path))
+                        .unwrap();
+                };
             }
             _ => (),
         }
@@ -224,7 +232,7 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
     fn event_group(
         &self,
         events: Vec<(i32, &str, Variant<Box<dyn RefArg>>, u32)>,
-    ) -> Result<Vec<i32>, Self::Err> {
+    ) -> Result<Vec<i32>, dbus::tree::MethodErr> {
         let (found, not_found) = events
             .into_iter()
             .partition::<Vec<_>, _>(|event| (event.0 as usize) < self.menu.borrow().len());
@@ -238,53 +246,35 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
         }
         Ok(not_found.into_iter().map(|event| event.0).collect())
     }
-    fn about_to_show(&self, _id: i32) -> Result<bool, Self::Err> {
+    fn about_to_show(&self, _id: i32) -> Result<bool, dbus::tree::MethodErr> {
         Ok(false)
     }
-    fn about_to_show_group(&self, _ids: Vec<i32>) -> Result<(Vec<i32>, Vec<i32>), Self::Err> {
+    fn about_to_show_group(
+        &self,
+        _ids: Vec<i32>,
+    ) -> Result<(Vec<i32>, Vec<i32>), dbus::tree::MethodErr> {
         // FIXME: the DBus message should set the no reply flag
         Ok(Default::default())
     }
-    fn get_version(&self) -> Result<u32, Self::Err> {
+    fn get_version(&self) -> Result<u32, dbus::tree::MethodErr> {
         Ok(3)
     }
-    fn get_text_direction(&self) -> Result<String, Self::Err> {
+    fn get_text_direction(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.menu_properties.text_direction.to_string())
     }
-    fn get_status(&self) -> Result<String, Self::Err> {
+    fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
         Ok(self.menu_properties.status.to_string())
     }
-    fn get_icon_theme_path(&self) -> Result<Vec<String>, Self::Err> {
+    fn get_icon_theme_path(&self) -> Result<Vec<String>, dbus::tree::MethodErr> {
         Ok(vec![])
     }
 }
 
-fn name_owner_changed(ci: &dbus::ConnectionItem) -> Option<(&str, Option<&str>, Option<&str>)> {
-    let m = if let &dbus::ConnectionItem::Signal(ref s) = ci {
-        s
-    } else {
-        return None;
-    };
-    if &*m.interface().unwrap() != "org.freedesktop.DBus" {
-        return None;
-    };
-    if &*m.member().unwrap() != "NameOwnerChanged" {
-        return None;
-    };
-    let (name, old_owner, new_owner) = m.get3::<&str, &str, &str>();
-    Some((
-        name.expect("NameOwnerChanged"),
-        old_owner.filter(|s| !s.is_empty()),
-        new_owner.filter(|s| !s.is_empty()),
-    ))
-}
-
 pub fn run<T: Tray + 'static>(tray: T) {
-    use dbus::BusType;
-    use dbus::Connection;
+    use dbus::blocking::Connection;
 
     let name = format!("org.kde.StatusNotifierItem-x-1");
-    let conn = Connection::get_private(BusType::Session).unwrap();
+    let conn = Connection::new_session().unwrap();
     let conn = Rc::new(conn);
     let tray_service = Rc::new(TrayService {
         inner: tray,
@@ -298,10 +288,10 @@ pub fn run<T: Tray + 'static>(tray: T) {
     let tray_service_clone = tray_service.clone();
     let f = dbus::tree::Factory::new_fn::<()>();
     let sni_interface = dbus_interface::status_notifier_item_server(&f, (), move |_| {
-        tray_service_clone.clone() as Rc<dyn dbus_interface::StatusNotifierItem<Err = _>>
+        tray_service_clone.clone() as Rc<dyn dbus_interface::StatusNotifierItem>
     });
     let menu_interface = dbus_interface::dbusmenu_server(&f, (), move |_| {
-        tray_service.clone() as Rc<dyn dbus_interface::Dbusmenu<Err = _>>
+        tray_service.clone() as Rc<dyn dbus_interface::Dbusmenu>
     });
     let tree = f
         .tree(())
@@ -315,29 +305,36 @@ pub fn run<T: Tray + 'static>(tray: T) {
                 .introspectable()
                 .add(menu_interface),
         );
-    conn.register_name(&name, 0).unwrap();
-    tree.set_registered(&conn, true).unwrap();
-    conn.add_handler(tree);
+    conn.request_name(&name, true, true, false).unwrap();
+    tree.start_receive(&*conn);
 
-    let status_notifier_watcher = conn.with_path(
+    use dbus_interface::StatusNotifierWatcher;
+    let status_notifier_watcher = conn.with_proxy(
         "org.kde.StatusNotifierWatcher",
         "/StatusNotifierWatcher",
-        1000,
+        Duration::from_millis(1000),
     );
-    use dbus_interface::StatusNotifierWatcher;
     status_notifier_watcher
         .register_status_notifier_item(&name)
         .unwrap_or_default();
 
-    conn.add_match("interface='org.freedesktop.DBus',member='NameOwnerChanged'")
-        .unwrap();
-
-    for m in conn.iter(500) {
-        if let Some(("org.kde.StatusNotifierWatcher", _, Some(_new_owner))) = name_owner_changed(&m)
-        {
-            status_notifier_watcher
+    status_notifier_watcher
+        .match_signal(move |h: freedesktop::NameOwnerChanged, c: &Connection| {
+            if h.name == "org.kde.StatusNotifierWatcher" {
+                c.with_proxy(
+                    "org.kde.StatusNotifierWatcher",
+                    "/StatusNotifierWatcher",
+                    Duration::from_millis(1000),
+                )
                 .register_status_notifier_item(&name)
                 .unwrap_or_default();
-        }
+            }
+            true
+        })
+        .unwrap();
+
+    let conn = unsafe { &mut *(Rc::into_raw(conn) as *mut Connection) };
+    loop {
+        conn.process(Duration::from_millis(500)).unwrap();
     }
 }

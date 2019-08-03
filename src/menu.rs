@@ -239,12 +239,12 @@ impl From<CheckmarkItem> for RawMenuItem {
                         "toggle-state".into(),
                         Variant(Box::new(new_state as i32) as Box<dyn RefArg>),
                     );
-                    crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
+                    Some(crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
                         updated_props: vec![(id as i32, props)],
                         removed_props: vec![],
-                    }
+                    })
                 } else {
-                    Default::default()
+                    None
                 }
             }),
             ..Default::default()
@@ -340,7 +340,7 @@ pub struct RawMenuItem {
         dyn Fn(
             &mut Vec<(RawMenuItem, Vec<usize>)>,
             usize,
-        ) -> crate::dbus_interface::DbusmenuItemsPropertiesUpdated,
+        ) -> Option<crate::dbus_interface::DbusmenuItemsPropertiesUpdated>,
     >,
     pub vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
 }
@@ -643,15 +643,15 @@ pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>
                                             Box::new(ToggleState::Off as i32) as Box<dyn RefArg>
                                         ),
                                     );
-                                    crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
+                                    Some(crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
                                         updated_props: vec![
                                             (id as i32, props_self),
                                             (prev_selected as i32, props_prev),
                                         ],
                                         removed_props: vec![],
-                                    }
+                                    })
                                 } else {
-                                    Default::default()
+                                    None
                                 }
                             }),
                             ..Default::default()

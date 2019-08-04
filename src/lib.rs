@@ -270,11 +270,11 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
     }
 }
 
-pub fn run<T: Tray + 'static>(tray: T) {
+pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
     use dbus::blocking::Connection;
 
     let name = format!("org.kde.StatusNotifierItem-x-1");
-    let conn = Connection::new_session().unwrap();
+    let conn = Connection::new_session()?;
     let conn = Rc::new(conn);
     let tray_service = Rc::new(TrayService {
         inner: tray,
@@ -305,7 +305,7 @@ pub fn run<T: Tray + 'static>(tray: T) {
                 .introspectable()
                 .add(menu_interface),
         );
-    conn.request_name(&name, true, true, false).unwrap();
+    conn.request_name(&name, true, true, false)?;
     tree.start_receive(&*conn);
 
     use dbus_interface::StatusNotifierWatcher;
@@ -314,12 +314,10 @@ pub fn run<T: Tray + 'static>(tray: T) {
         "/StatusNotifierWatcher",
         Duration::from_millis(1000),
     );
-    status_notifier_watcher
-        .register_status_notifier_item(&name)
-        .unwrap_or_default();
+    status_notifier_watcher.register_status_notifier_item(&name)?;
 
-    status_notifier_watcher
-        .match_signal(move |h: freedesktop::NameOwnerChanged, c: &Connection| {
+    status_notifier_watcher.match_signal(
+        move |h: freedesktop::NameOwnerChanged, c: &Connection| {
             if h.name == "org.kde.StatusNotifierWatcher" {
                 c.with_proxy(
                     "org.kde.StatusNotifierWatcher",
@@ -330,11 +328,12 @@ pub fn run<T: Tray + 'static>(tray: T) {
                 .unwrap_or_default();
             }
             true
-        })
-        .unwrap();
+        },
+    )?;
 
+    // This is safe, since we only use it's clone to emit signal
     let conn = unsafe { &mut *(Rc::into_raw(conn) as *mut Connection) };
     loop {
-        conn.process(Duration::from_millis(500)).unwrap();
+        conn.process(Duration::from_millis(500))?;
     }
 }

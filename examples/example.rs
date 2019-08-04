@@ -81,5 +81,5 @@ fn main() {
         }
     }
 
-    ksni::run(MyTray);
+    ksni::run(MyTray).unwrap();
 }

@@ -5,13 +5,17 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use dbus::arg::{RefArg, Variant};
-use dbus::channel::Sender;
-use dbus::message::SignalArgs;
+use dbus::blocking::Connection;
+use dbus::channel::{MatchingReceiver, Sender};
+use dbus::message::{MatchRule, MessageType, SignalArgs};
 
+mod dbus_ext;
 mod dbus_interface;
 mod freedesktop;
 pub mod menu;
 pub mod tray;
+
+use dbus_interface::StatusNotifierWatcher;
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
@@ -47,7 +51,6 @@ struct TrayService<T: Tray> {
     menu_properties: menu::Properties,
     // A list of menu item and it's submenu
     menu: RefCell<Vec<(menu::RawMenuItem, Vec<usize>)>>,
-    conn: Rc<dbus::blocking::Connection>,
     menu_path: dbus::Path<'static>,
 }
 
@@ -220,8 +223,8 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
                 let activate = self.menu.borrow()[id as usize].0.on_clicked.clone();
                 let m = (activate)(&mut self.menu.borrow_mut(), id as usize);
                 if let Some(msg) = m {
-                    self.conn
-                        .send(msg.to_emit_message(&self.menu_path))
+                    dbus_ext::with_current(|conn| conn.send(msg.to_emit_message(&self.menu_path)))
+                        .unwrap()
                         .unwrap();
                 };
             }
@@ -270,18 +273,41 @@ impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
     }
 }
 
-pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
-    use dbus::blocking::Connection;
+fn register_to_watcher(conn: &Connection, name: String) -> Result<(), dbus::Error> {
+    let status_notifier_watcher = conn.with_proxy(
+        "org.kde.StatusNotifierWatcher",
+        "/StatusNotifierWatcher",
+        Duration::from_millis(1000),
+    );
+    status_notifier_watcher.register_status_notifier_item(&name)?;
 
+    status_notifier_watcher.match_signal(
+        move |h: freedesktop::NameOwnerChanged, c: &Connection| {
+            if h.name == "org.kde.StatusNotifierWatcher" {
+                c.with_proxy(
+                    "org.kde.StatusNotifierWatcher",
+                    "/StatusNotifierWatcher",
+                    Duration::from_millis(1000),
+                )
+                .register_status_notifier_item(&name)
+                .unwrap_or_default();
+            }
+            true
+        },
+    )?;
+    Ok(())
+}
+
+pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
     let name = format!("org.kde.StatusNotifierItem-x-1");
-    let conn = Connection::new_session()?;
-    let conn = Rc::new(conn);
+    let mut conn = Connection::new_session()?;
+    conn.request_name(&name, true, true, false)?;
+
     let tray_service = Rc::new(TrayService {
         inner: tray,
         tray_properties: T::tray_properties(),
         menu_properties: T::menu_properties(),
         menu: RefCell::new(menu::menu_flatten(T::menu())),
-        conn: conn.clone(),
         menu_path: MENU_PATH.into(),
     });
 
@@ -305,34 +331,25 @@ pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
                 .introspectable()
                 .add(menu_interface),
         );
-    conn.request_name(&name, true, true, false)?;
-    tree.start_receive(&*conn);
-
-    use dbus_interface::StatusNotifierWatcher;
-    let status_notifier_watcher = conn.with_proxy(
-        "org.kde.StatusNotifierWatcher",
-        "/StatusNotifierWatcher",
-        Duration::from_millis(1000),
-    );
-    status_notifier_watcher.register_status_notifier_item(&name)?;
-
-    status_notifier_watcher.match_signal(
-        move |h: freedesktop::NameOwnerChanged, c: &Connection| {
-            if h.name == "org.kde.StatusNotifierWatcher" {
-                c.with_proxy(
-                    "org.kde.StatusNotifierWatcher",
-                    "/StatusNotifierWatcher",
-                    Duration::from_millis(1000),
-                )
-                .register_status_notifier_item(&name)
-                .unwrap_or_default();
-            }
+    let mut rule = MatchRule::new();
+    rule.msg_type = Some(MessageType::MethodCall);
+    conn.start_receive(
+        rule,
+        Box::new(move |msg, c| {
+            dbus_ext::with_conn(c, || {
+                if let Some(replies) = tree.handle(&msg) {
+                    for r in replies {
+                        let _ = c.send(r);
+                    }
+                }
+            });
             true
-        },
-    )?;
+        }),
+    );
+
+    register_to_watcher(&conn, name)?;
 
     // This is safe, since we only use it's clone to emit signal
-    let conn = unsafe { &mut *(Rc::into_raw(conn) as *mut Connection) };
     loop {
         conn.process(Duration::from_millis(500))?;
     }

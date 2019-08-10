@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use dbus::arg::{RefArg, Variant};
@@ -19,6 +20,8 @@ use dbus_interface::StatusNotifierWatcher;
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
+
+static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 pub trait Tray {
     type Err: std::fmt::Display;
@@ -299,7 +302,11 @@ fn register_to_watcher(conn: &Connection, name: String) -> Result<(), dbus::Erro
 }
 
 pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
-    let name = format!("org.kde.StatusNotifierItem-x-1");
+    let name = format!(
+        "org.kde.StatusNotifierItem-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::AcqRel)
+    );
     let mut conn = Connection::new_session()?;
     conn.request_name(&name, true, true, false)?;
 
@@ -349,7 +356,6 @@ pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
 
     register_to_watcher(&conn, name)?;
 
-    // This is safe, since we only use it's clone to emit signal
     loop {
         conn.process(Duration::from_millis(500))?;
     }

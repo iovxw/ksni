@@ -337,7 +337,9 @@ pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
             f.object_path(MENU_PATH, ())
                 .introspectable()
                 .add(menu_interface),
-        );
+        )
+        // Add root path, to help introspection from debugging tools
+        .add(f.object_path("/", ()).introspectable());
     let mut rule = MatchRule::new();
     rule.msg_type = Some(MessageType::MethodCall);
     conn.start_receive(

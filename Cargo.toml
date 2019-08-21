@@ -17,8 +17,8 @@ maintenance = { status = "experimental" }
 
 [dependencies]
 #dbus = "^0.7"
-dbus = { version = "^0.7", path = "dbus-rs/dbus" }
+dbus = { git = "https://github.com/diwic/dbus-rs.git", rev = "cee93b6f" }
 
 [build-dependencies]
 #dbus-codegen = "^0.4"
-dbus-codegen = { version = "^0.4", path = "dbus-rs/dbus-codegen" }
+dbus-codegen = { git = "https://github.com/diwic/dbus-rs.git", rev = "cee93b6f" }

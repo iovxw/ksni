@@ -16,9 +16,7 @@ travis-ci = { repository = "iovxw/ksni" }
 maintenance = { status = "experimental" }
 
 [dependencies]
-#dbus = "^0.7"
-dbus = { git = "https://github.com/diwic/dbus-rs.git", rev = "cee93b6f" }
+dbus = "^0.7"
 
 [build-dependencies]
-#dbus-codegen = "^0.4"
-dbus-codegen = { git = "https://github.com/diwic/dbus-rs.git", rev = "cee93b6f" }
+dbus-codegen = "^0.4"

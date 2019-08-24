@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dbus::arg::{RefArg, Variant};
@@ -23,20 +24,37 @@ const MENU_PATH: &str = "/MenuBar";
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-pub trait Tray {
+pub trait TrayModel {
     type Err: std::fmt::Display;
-    fn activate(&self, _x: i32, _y: i32) -> Result<(), Self::Err> {
-        Ok(())
-    }
-    fn secondary_activate(&self, _x: i32, _y: i32) -> Result<(), Self::Err> {
-        Ok(())
-    }
-    fn scroll(&self, _delta: i32, _dir: &str) -> Result<(), Self::Err> {
-        Ok(())
-    }
-    fn context_menu(&self, _x: i32, _y: i32) -> Result<(), Self::Err> {
-        Ok(())
-    }
+    /// Asks the status notifier item for activation, this is typically a
+    /// consequence of user input, such as mouse left click over the graphical
+    /// representation of the item.
+    /// The application will perform any task is considered appropriate as an
+    /// activation request.
+    ///
+    /// the x and y parameters are in screen coordinates and is to be considered
+    /// an hint to the item where to show eventual windows (if any).
+    fn activate(_model: Model<Self>, _x: i32, _y: i32) {}
+
+    /// Is to be considered a secondary and less important form of activation
+    /// compared to Activate.
+    /// This is typically a consequence of user input, such as mouse middle
+    /// click over the graphical representation of the item.
+    /// The application will perform any task is considered appropriate as an
+    /// activation request.
+    ///
+    /// the x and y parameters are in screen coordinates and is to be considered
+    /// an hint to the item where to show eventual windows (if any).
+    fn secondary_activate(_model: Model<Self>, _x: i32, _y: i32) {}
+
+    /// The user asked for a scroll action. This is caused from input such as
+    /// mouse wheel over the graphical representation of the item.
+    ///
+    /// The delta parameter represent the amount of scroll, the orientation
+    /// parameter represent the horizontal or vertical orientation of the scroll
+    /// request and its legal values are horizontal and vertical.
+    fn scroll(_model: Model<Self>, _delta: i32, _dir: &str) {}
+
     fn tray_properties() -> tray::Properties {
         Default::default()
     }
@@ -48,8 +66,8 @@ pub trait Tray {
     }
 }
 
-struct TrayService<T: Tray> {
-    inner: T,
+struct TrayService<T: TrayModel> {
+    model: Model<T>,
     tray_properties: tray::Properties,
     menu_properties: menu::Properties,
     // A list of menu item and it's submenu
@@ -57,32 +75,46 @@ struct TrayService<T: Tray> {
     menu_path: dbus::Path<'static>,
 }
 
-impl<T: Tray> fmt::Debug for TrayService<T> {
+pub struct Model<T: TrayModel + ?Sized> {
+    inner: Arc<Mutex<T>>,
+}
+
+impl<T: TrayModel> Model<T> {
+    pub fn update<F: Fn(&T)>(&self, f: F) {
+        let inner = self.inner.lock().unwrap();
+        (f)(&inner);
+    }
+}
+
+impl<T: TrayModel> Clone for Model<T> {
+    fn clone(&self) -> Self {
+        Model {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T: TrayModel> fmt::Debug for TrayService<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct(&format!("StatusNotifierItem")).finish()
     }
 }
 
-impl<T: Tray> dbus_interface::StatusNotifierItem for TrayService<T> {
+impl<T: TrayModel> dbus_interface::StatusNotifierItem for TrayService<T> {
     fn activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        self.inner
-            .activate(x, y)
-            .map_err(|e| dbus::tree::MethodErr::failed(&e))
+        TrayModel::activate(self.model.clone(), x, y);
+        Ok(())
     }
     fn secondary_activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        self.inner
-            .secondary_activate(x, y)
-            .map_err(|e| dbus::tree::MethodErr::failed(&e))
+        TrayModel::secondary_activate(self.model.clone(), x, y);
+        Ok(())
     }
     fn scroll(&self, delta: i32, dir: &str) -> Result<(), dbus::tree::MethodErr> {
-        self.inner
-            .scroll(delta, dir)
-            .map_err(|e| dbus::tree::MethodErr::failed(&e))
+        TrayModel::scroll(self.model.clone(), delta, dir);
+        Ok(())
     }
-    fn context_menu(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        self.inner
-            .context_menu(x, y)
-            .map_err(|e| dbus::tree::MethodErr::failed(&e))
+    fn context_menu(&self, _x: i32, _y: i32) -> Result<(), dbus::tree::MethodErr> {
+        Ok(())
     }
     fn get_item_is_menu(&self) -> Result<bool, dbus::tree::MethodErr> {
         Ok(self.tray_properties.item_is_menu)
@@ -154,7 +186,7 @@ impl<T: Tray> dbus_interface::StatusNotifierItem for TrayService<T> {
     }
 }
 
-impl<T: Tray> dbus_interface::Dbusmenu for TrayService<T> {
+impl<T: TrayModel> dbus_interface::Dbusmenu for TrayService<T> {
     fn get_layout(
         &self,
         parent_id: i32,
@@ -301,7 +333,7 @@ fn register_to_watcher(conn: &Connection, name: String) -> Result<(), dbus::Erro
     Ok(())
 }
 
-pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
+pub fn run<T: TrayModel + 'static>(tray: T) -> Result<(), dbus::Error> {
     let name = format!(
         "org.kde.StatusNotifierItem-{}-{}",
         std::process::id(),
@@ -311,7 +343,9 @@ pub fn run<T: Tray + 'static>(tray: T) -> Result<(), dbus::Error> {
     conn.request_name(&name, true, true, false)?;
 
     let tray_service = Rc::new(TrayService {
-        inner: tray,
+        model: Model {
+            inner: Arc::new(Mutex::new(tray)),
+        },
         tray_properties: T::tray_properties(),
         menu_properties: T::menu_properties(),
         menu: RefCell::new(menu::menu_flatten(T::menu())),

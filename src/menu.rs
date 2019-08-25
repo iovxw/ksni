@@ -34,7 +34,7 @@ impl fmt::Display for TextDirection {
     }
 }
 
-pub enum Status {
+pub(crate) enum Status {
     Normal,
     Notice,
 }
@@ -285,8 +285,8 @@ impl Default for RadioItem {
     }
 }
 
-pub struct RawMenuItem {
-    pub r#type: ItemType,
+pub(crate) struct RawMenuItem {
+    r#type: ItemType,
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
     /// single underscore,
@@ -294,15 +294,15 @@ pub struct RawMenuItem {
     /// -# the first of those remaining underscore characters (unless it is
     /// the last character in the string) indicates that the following
     /// character is the access key.
-    pub label: String,
+    label: String,
     /// Whether the item can be activated or not.
-    pub enabled: bool,
+    enabled: bool,
     /// True if the item is visible in the menu.
-    pub visible: bool,
+    visible: bool,
     /// Icon name of the item, following the freedesktop.org icon spec.
-    pub icon_name: String,
+    icon_name: String,
     /// PNG data of the icon.
-    pub icon_data: Vec<u8>,
+    icon_data: Vec<u8>,
     /// The shortcut of the item. Each array represents the key press
     /// in the list of keypresses. Each list of strings contains a list of
     /// modifiers and then the key that is used. The modifier strings
@@ -311,7 +311,7 @@ pub struct RawMenuItem {
     ///   [["Control", "S"]]
     /// - A complex shortcut like Ctrl+Q, Alt+X is represented as:
     ///   [["Control", "Q"], ["Alt", "X"]]
-    pub shortcut: Vec<Vec<String>>,
+    shortcut: Vec<Vec<String>>,
     toggle_type: ToggleType,
     /// Describe the current state of a "togglable" item.
     /// Note:
@@ -322,14 +322,14 @@ pub struct RawMenuItem {
     toggle_state: ToggleState,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
-    pub disposition: ItemDisposition,
-    on_clicked: Rc<
+    disposition: ItemDisposition,
+    pub on_clicked: Rc<
         dyn Fn(
             &mut Vec<(RawMenuItem, Vec<usize>)>,
             usize,
         ) -> Option<crate::dbus_interface::DbusmenuItemsPropertiesUpdated>,
     >,
-    pub vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
+    vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
 }
 
 impl Clone for RawMenuItem {
@@ -468,7 +468,7 @@ impl fmt::Display for VendorSpecific {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum ItemType {
+enum ItemType {
     /// an item which can be clicked to trigger an action or
     Standard,
     /// a separator
@@ -527,23 +527,6 @@ pub enum ItemDisposition {
     Warning,
     /// Something bad could potentially happen
     Alert,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum MenuStatus {
-    Normal,
-    Notice,
-}
-
-impl fmt::Display for MenuStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use MenuStatus::*;
-        let r = match self {
-            Normal => "normal",
-            Notice => "notice",
-        };
-        f.write_str(r)
-    }
 }
 
 pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {

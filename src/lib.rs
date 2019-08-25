@@ -14,12 +14,12 @@ use dbus::message::{MatchRule, MessageType, SignalArgs};
 mod dbus_ext;
 mod dbus_interface;
 mod freedesktop;
-pub mod menu;
-pub mod tray;
+mod menu;
+mod tray;
 
 use dbus_interface::StatusNotifierWatcher;
-use menu::{MenuItem, TextDirection};
-use tray::{Category, Icon, Status, ToolTip};
+pub use menu::{MenuItem, TextDirection};
+pub use tray::{Category, Icon, Status, ToolTip};
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";

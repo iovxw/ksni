@@ -5,32 +5,19 @@ use std::rc::Rc;
 
 use dbus::arg::{RefArg, Variant};
 
-pub struct Properties {
-    /// Represents the way the text direction of the application.  This
-    /// allows the server to handle mismatches intelligently.
-    pub text_direction: TextDirection,
-    /// Tells if the menus are in a normal state or they believe that they
-    /// could use some attention.  Cases for showing them would be if help
-    /// were referring to them or they accessors were being highlighted.
-    /// This property can have two values: "normal" in almost all cases and
-    /// "notice" when they should have a higher priority to be shown.
-    pub status: Status,
-    /// A list of directories that should be used for finding icons using
-    /// the icon naming spec.  Idealy there should only be one for the icon
-    /// theme, but additional ones are often added by applications for
-    /// app specific icons.
-    pub icon_theme_path: Vec<String>,
-}
-
-impl Default for Properties {
-    fn default() -> Self {
-        Self {
-            text_direction: TextDirection::LeftToRight,
-            status: Status::Normal,
-            icon_theme_path: Default::default(),
-        }
-    }
-}
+// pub struct Properties {
+//     /// Tells if the menus are in a normal state or they believe that they
+//     /// could use some attention.  Cases for showing them would be if help
+//     /// were referring to them or they accessors were being highlighted.
+//     /// This property can have two values: "normal" in almost all cases and
+//     /// "notice" when they should have a higher priority to be shown.
+//     pub status: Status,
+//     /// A list of directories that should be used for finding icons using
+//     /// the icon naming spec.  Idealy there should only be one for the icon
+//     /// theme, but additional ones are often added by applications for
+//     /// app specific icons.
+//     pub icon_theme_path: Vec<String>,
+// }
 
 pub enum TextDirection {
     LeftToRight,
@@ -325,18 +312,18 @@ pub struct RawMenuItem {
     /// - A complex shortcut like Ctrl+Q, Alt+X is represented as:
     ///   [["Control", "Q"], ["Alt", "X"]]
     pub shortcut: Vec<Vec<String>>,
-    pub toggle_type: ToggleType,
+    toggle_type: ToggleType,
     /// Describe the current state of a "togglable" item.
     /// Note:
     /// The implementation does not itself handle ensuring that only one
     /// item in a radio group is set to "on", or that a group does not have
     /// "on" and "indeterminate" items simultaneously; maintaining this
     /// policy is up to the toolkit wrappers.
-    pub toggle_state: ToggleState,
+    toggle_state: ToggleState,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: ItemDisposition,
-    pub on_clicked: Rc<
+    on_clicked: Rc<
         dyn Fn(
             &mut Vec<(RawMenuItem, Vec<usize>)>,
             usize,
@@ -502,7 +489,7 @@ impl fmt::Display for ItemType {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ToggleType {
+enum ToggleType {
     /// Item is an independent togglable item
     Checkmark,
     /// Item is part of a group where only one item can be toggled at a time
@@ -524,7 +511,7 @@ impl fmt::Display for ToggleType {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ToggleState {
+enum ToggleState {
     Off = 0,
     On = 1,
     Indeterminate = -1,

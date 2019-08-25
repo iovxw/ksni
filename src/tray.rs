@@ -1,46 +1,5 @@
 use std::fmt;
 
-#[derive(Clone, Debug)]
-pub struct Properties {
-    pub category: Category,
-    pub id: String,
-    pub title: String,
-    pub status: Status,
-    pub window_id: i32, // u32 in org.freedesktop.StatusNotifierItem
-    pub icon_theme_path: String,
-    pub item_is_menu: bool,
-    pub icon_name: String,
-    pub icon_pixmap: Vec<Icon>,
-    pub overlay_icon_name: String,
-    pub overlay_icon_pixmap: Vec<Icon>,
-    pub attention_icon_name: String,
-    pub attention_icon_pixmap: Vec<Icon>,
-    pub attention_movie_name: String,
-    pub tool_tip: ToolTip,
-}
-
-impl Default for Properties {
-    fn default() -> Self {
-        Properties {
-            category: Category::ApplicationStatus,
-            id: Default::default(),
-            title: Default::default(),
-            status: Status::Active,
-            window_id: Default::default(),
-            icon_theme_path: Default::default(),
-            item_is_menu: Default::default(),
-            icon_name: Default::default(),
-            icon_pixmap: Default::default(),
-            overlay_icon_name: Default::default(),
-            overlay_icon_pixmap: Default::default(),
-            attention_icon_name: Default::default(),
-            attention_icon_pixmap: Default::default(),
-            attention_movie_name: Default::default(),
-            tool_tip: Default::default(),
-        }
-    }
-}
-
 /// Describes the category of this item.
 #[derive(Copy, Clone, Debug)]
 pub enum Category {

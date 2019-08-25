@@ -18,6 +18,8 @@ pub mod menu;
 pub mod tray;
 
 use dbus_interface::StatusNotifierWatcher;
+use menu::{MenuItem, TextDirection};
+use tray::{Category, Icon, Status, ToolTip};
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
@@ -34,7 +36,7 @@ pub trait TrayModel {
     ///
     /// the x and y parameters are in screen coordinates and is to be considered
     /// an hint to the item where to show eventual windows (if any).
-    fn activate(_model: Model<Self>, _x: i32, _y: i32) {}
+    fn activate(_model: &Model<Self>, _x: i32, _y: i32) {}
 
     /// Is to be considered a secondary and less important form of activation
     /// compared to Activate.
@@ -45,7 +47,7 @@ pub trait TrayModel {
     ///
     /// the x and y parameters are in screen coordinates and is to be considered
     /// an hint to the item where to show eventual windows (if any).
-    fn secondary_activate(_model: Model<Self>, _x: i32, _y: i32) {}
+    fn secondary_activate(_model: &Model<Self>, _x: i32, _y: i32) {}
 
     /// The user asked for a scroll action. This is caused from input such as
     /// mouse wheel over the graphical representation of the item.
@@ -53,23 +55,113 @@ pub trait TrayModel {
     /// The delta parameter represent the amount of scroll, the orientation
     /// parameter represent the horizontal or vertical orientation of the scroll
     /// request and its legal values are horizontal and vertical.
-    fn scroll(_model: Model<Self>, _delta: i32, _dir: &str) {}
+    fn scroll(_model: &Model<Self>, _delta: i32, _dir: &str) {}
 
-    fn tray_properties() -> tray::Properties {
+    /// Describes the category of this item.
+    fn category(_model: &Model<Self>) -> Category {
+        tray::Category::ApplicationStatus
+    }
+
+    /// It's a name that should be unique for this application and consistent
+    /// between sessions, such as the application name itself.
+    fn id(_model: &Model<Self>) -> String {
         Default::default()
     }
-    fn menu_properties() -> menu::Properties {
+
+    /// It's a name that describes the application, it can be more descriptive
+    /// than Id.
+    fn title(_model: &Model<Self>) -> String {
         Default::default()
     }
-    fn menu() -> Vec<menu::MenuItem> {
+
+    /// Describes the status of this item or of the associated application.
+    fn status(_model: &Model<Self>) -> Status {
+        tray::Status::Active
+    }
+
+    // NOTE: u32 in org.freedesktop.StatusNotifierItem
+    /// It's the windowing-system dependent identifier for a window, the
+    /// application can chose one of its windows to be available through this
+    /// property or just set 0 if it's not interested.
+    fn window_id(_model: &Model<Self>) -> i32 {
+        0
+    }
+
+    /// An additional path to add to the theme search path to find the icons.
+    fn icon_theme_path(_model: &Model<Self>) -> String {
+        Default::default()
+    }
+
+    /// The item only support the context menu, the visualization
+    /// should prefer showing the menu or sending ContextMenu()
+    /// instead of Activate()
+    // fn item_is_menu() -> bool { false }
+
+    /// The StatusNotifierItem can carry an icon that can be used by the
+    /// visualization to identify the item.
+    fn icon_name(_model: &Model<Self>) -> String {
+        Default::default()
+    }
+
+    /// Carries an ARGB32 binary representation of the icon
+    fn icon_pixmap(_model: &Model<Self>) -> Vec<Icon> {
+        Default::default()
+    }
+
+    /// The Freedesktop-compliant name of an icon. This can be used by the
+    /// visualization to indicate extra state information, for instance as an
+    /// overlay for the main icon.
+    fn overlay_icon_name(_model: &Model<Self>) -> String {
+        Default::default()
+    }
+
+    /// ARGB32 binary representation of the overlay icon described in the
+    /// previous paragraph.
+    fn overlay_icon_pixmap(_model: &Model<Self>) -> Vec<Icon> {
+        Default::default()
+    }
+
+    /// The Freedesktop-compliant name of an icon. this can be used by the
+    /// visualization to indicate that the item is in RequestingAttention state.
+    fn attention_icon_name(_model: &Model<Self>) -> String {
+        Default::default()
+    }
+
+    /// ARGB32 binary representation of the requesting attention icon describe in
+    /// the previous paragraph.
+    fn attention_icon_pixmap(_model: &Model<Self>) -> Vec<Icon> {
+        Default::default()
+    }
+
+    /// An item can also specify an animation associated to the
+    /// RequestingAttention state.
+    /// This should be either a Freedesktop-compliant icon name or a full path.
+    /// The visualization can chose between the movie or AttentionIconPixmap (or
+    /// using neither of those) at its discretion.
+    fn attention_movie_name(_model: &Model<Self>) -> String {
+        Default::default()
+    }
+
+    /// Data structure that describes extra information associated to this item,
+    /// that can be visualized for instance by a tooltip (or by any other mean
+    /// the visualization consider appropriate.
+    fn tool_tip(_model: &Model<Self>) -> ToolTip {
+        Default::default()
+    }
+
+    /// Represents the way the text direction of the application.  This
+    /// allows the server to handle mismatches intelligently.
+    fn text_direction(_model: &Model<Self>) -> TextDirection {
+        menu::TextDirection::LeftToRight
+    }
+
+    fn menu(_model: &Model<Self>) -> Vec<MenuItem> {
         Default::default()
     }
 }
 
 struct TrayService<T: TrayModel> {
     model: Model<T>,
-    tray_properties: tray::Properties,
-    menu_properties: menu::Properties,
     // A list of menu item and it's submenu
     menu: RefCell<Vec<(menu::RawMenuItem, Vec<usize>)>>,
     menu_path: dbus::Path<'static>,
@@ -102,87 +194,78 @@ impl<T: TrayModel> fmt::Debug for TrayService<T> {
 
 impl<T: TrayModel> dbus_interface::StatusNotifierItem for TrayService<T> {
     fn activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        TrayModel::activate(self.model.clone(), x, y);
+        TrayModel::activate(&self.model, x, y);
         Ok(())
     }
     fn secondary_activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        TrayModel::secondary_activate(self.model.clone(), x, y);
+        TrayModel::secondary_activate(&self.model, x, y);
         Ok(())
     }
     fn scroll(&self, delta: i32, dir: &str) -> Result<(), dbus::tree::MethodErr> {
-        TrayModel::scroll(self.model.clone(), delta, dir);
+        TrayModel::scroll(&self.model, delta, dir);
         Ok(())
     }
     fn context_menu(&self, _x: i32, _y: i32) -> Result<(), dbus::tree::MethodErr> {
         Ok(())
     }
     fn get_item_is_menu(&self) -> Result<bool, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.item_is_menu)
+        Ok(false)
     }
     fn get_category(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.category.to_string())
+        Ok(TrayModel::category(&self.model).to_string())
     }
     fn get_id(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.id.clone())
+        Ok(TrayModel::id(&self.model))
     }
     fn get_title(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.title.clone())
+        Ok(TrayModel::title(&self.model))
     }
     fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.status.to_string())
+        Ok(TrayModel::status(&self.model).to_string())
     }
     fn get_window_id(&self) -> Result<i32, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.window_id.clone())
+        Ok(TrayModel::window_id(&self.model))
     }
     fn get_menu(&self) -> Result<dbus::Path<'static>, dbus::tree::MethodErr> {
         Ok(MENU_PATH.into())
     }
     fn get_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.icon_name.clone())
+        Ok(TrayModel::icon_name(&self.model))
     }
     fn get_icon_theme_path(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.icon_theme_path.clone())
+        Ok(TrayModel::icon_theme_path(&self.model))
     }
     fn get_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
-        Ok(self
-            .tray_properties
-            .icon_pixmap
-            .iter()
-            .cloned()
+        Ok(TrayModel::icon_pixmap(&self.model)
+            .into_iter()
             .map(Into::into)
             .collect())
     }
     fn get_overlay_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.overlay_icon_name.clone())
+        Ok(TrayModel::overlay_icon_name(&self.model))
     }
     fn get_overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
-        Ok(self
-            .tray_properties
-            .overlay_icon_pixmap
-            .iter()
-            .cloned()
+        Ok(TrayModel::overlay_icon_pixmap(&self.model)
+            .into_iter()
             .map(Into::into)
             .collect())
     }
     fn get_attention_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.attention_icon_name.clone())
+        Ok(TrayModel::attention_icon_name(&self.model))
     }
     fn get_attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
-        Ok(self
-            .tray_properties
-            .attention_icon_pixmap
-            .iter()
-            .cloned()
+        Ok(TrayModel::attention_icon_pixmap(&self.model)
+            .into_iter()
             .map(Into::into)
             .collect())
     }
     fn get_attention_movie_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.tray_properties.attention_movie_name.clone())
+        Ok(TrayModel::attention_movie_name(&self.model))
     }
     fn get_tool_tip(
         &self,
     ) -> Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String), dbus::tree::MethodErr> {
-        Ok(self.tray_properties.tool_tip.clone().into())
+        Ok(TrayModel::tool_tip(&self.model).into())
     }
 }
 
@@ -298,13 +381,22 @@ impl<T: TrayModel> dbus_interface::Dbusmenu for TrayService<T> {
         Ok(3)
     }
     fn get_text_direction(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.menu_properties.text_direction.to_string())
+        Ok(TrayModel::text_direction(&self.model).to_string())
     }
     fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
-        Ok(self.menu_properties.status.to_string())
+        Ok(match TrayModel::status(&self.model) {
+            tray::Status::Active | tray::Status::Passive => menu::Status::Normal,
+            tray::Status::NeedsAttention => menu::Status::Notice,
+        }
+        .to_string())
     }
     fn get_icon_theme_path(&self) -> Result<Vec<String>, dbus::tree::MethodErr> {
-        Ok(vec![])
+        let path = TrayModel::icon_theme_path(&self.model);
+        Ok(if path.is_empty() {
+            Default::default()
+        } else {
+            vec![path]
+        })
     }
 }
 
@@ -342,13 +434,13 @@ pub fn run<T: TrayModel + 'static>(tray: T) -> Result<(), dbus::Error> {
     let mut conn = Connection::new_session()?;
     conn.request_name(&name, true, true, false)?;
 
+    let model = Model {
+        inner: Arc::new(Mutex::new(tray)),
+    };
+    let menu = RefCell::new(menu::menu_flatten(T::menu(&model)));
     let tray_service = Rc::new(TrayService {
-        model: Model {
-            inner: Arc::new(Mutex::new(tray)),
-        },
-        tray_properties: T::tray_properties(),
-        menu_properties: T::menu_properties(),
-        menu: RefCell::new(menu::menu_flatten(T::menu())),
+        model: model,
+        menu: menu,
         menu_path: MENU_PATH.into(),
     });
 

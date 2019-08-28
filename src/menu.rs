@@ -58,12 +58,33 @@ pub enum MenuItem {
 }
 
 pub struct StandardItem {
+    /// Text of the item, except that:
+    /// -# two consecutive underscore characters "__" are displayed as a
+    /// single underscore,
+    /// -# any remaining underscore characters are not displayed at all,
+    /// -# the first of those remaining underscore characters (unless it is
+    /// the last character in the string) indicates that the following
+    /// character is the access key.
     pub label: String,
+    /// Whether the item can be activated or not.
     pub enabled: bool,
+    /// True if the item is visible in the menu.
     pub visible: bool,
+    /// Icon name of the item, following the freedesktop.org icon spec.
     pub icon_name: String,
+    /// PNG data of the icon.
     pub icon_data: Vec<u8>,
+    /// The shortcut of the item. Each array represents the key press
+    /// in the list of keypresses. Each list of strings contains a list of
+    /// modifiers and then the key that is used. The modifier strings
+    /// allowed are: "Control", "Alt", "Shift" and "Super".
+    /// - A simple shortcut like Ctrl+S is represented as:
+    ///   [["Control", "S"]]
+    /// - A complex shortcut like Ctrl+Q, Alt+X is represented as:
+    ///   [["Control", "Q"], ["Alt", "X"]]
     pub shortcut: Vec<Vec<String>>,
+    /// How the menuitem feels the information it's displaying to the
+    /// user should be presented.
     pub disposition: ItemDisposition,
     pub activate: Box<dyn Fn()>,
 }
@@ -111,12 +132,33 @@ impl From<StandardItem> for RawMenuItem {
 }
 
 pub struct SubMenu {
+    /// Text of the item, except that:
+    /// -# two consecutive underscore characters "__" are displayed as a
+    /// single underscore,
+    /// -# any remaining underscore characters are not displayed at all,
+    /// -# the first of those remaining underscore characters (unless it is
+    /// the last character in the string) indicates that the following
+    /// character is the access key.
     pub label: String,
+    /// Whether the item can be activated or not.
     pub enabled: bool,
+    /// True if the item is visible in the menu.
     pub visible: bool,
+    /// Icon name of the item, following the freedesktop.org icon spec.
     pub icon_name: String,
+    /// PNG data of the icon.
     pub icon_data: Vec<u8>,
+    /// The shortcut of the item. Each array represents the key press
+    /// in the list of keypresses. Each list of strings contains a list of
+    /// modifiers and then the key that is used. The modifier strings
+    /// allowed are: "Control", "Alt", "Shift" and "Super".
+    /// - A simple shortcut like Ctrl+S is represented as:
+    ///   [["Control", "S"]]
+    /// - A complex shortcut like Ctrl+Q, Alt+X is represented as:
+    ///   [["Control", "Q"], ["Alt", "X"]]
     pub shortcut: Vec<Vec<String>>,
+    /// How the menuitem feels the information it's displaying to the
+    /// user should be presented.
     pub disposition: ItemDisposition,
     pub submenu: Vec<MenuItem>,
 }
@@ -160,13 +202,34 @@ impl From<SubMenu> for RawMenuItem {
 }
 
 pub struct CheckmarkItem {
+    /// Text of the item, except that:
+    /// -# two consecutive underscore characters "__" are displayed as a
+    /// single underscore,
+    /// -# any remaining underscore characters are not displayed at all,
+    /// -# the first of those remaining underscore characters (unless it is
+    /// the last character in the string) indicates that the following
+    /// character is the access key.
     pub label: String,
+    /// Whether the item can be activated or not.
     pub enabled: bool,
+    /// True if the item is visible in the menu.
     pub visible: bool,
     pub checked: bool,
+    /// PNG data of the icon.
     pub icon_name: String,
+    /// PNG data of the icon.
     pub icon_data: Vec<u8>,
+    /// The shortcut of the item. Each array represents the key press
+    /// in the list of keypresses. Each list of strings contains a list of
+    /// modifiers and then the key that is used. The modifier strings
+    /// allowed are: "Control", "Alt", "Shift" and "Super".
+    /// - A simple shortcut like Ctrl+S is represented as:
+    ///   [["Control", "S"]]
+    /// - A complex shortcut like Ctrl+Q, Alt+X is represented as:
+    ///   [["Control", "Q"], ["Alt", "X"]]
     pub shortcut: Vec<Vec<String>>,
+    /// How the menuitem feels the information it's displaying to the
+    /// user should be presented.
     pub disposition: ItemDisposition,
     pub activate: Box<dyn Fn(bool) -> bool>,
 }
@@ -262,12 +325,33 @@ impl From<RadioGroup> for MenuItem {
 }
 
 pub struct RadioItem {
+    /// Text of the item, except that:
+    /// -# two consecutive underscore characters "__" are displayed as a
+    /// single underscore,
+    /// -# any remaining underscore characters are not displayed at all,
+    /// -# the first of those remaining underscore characters (unless it is
+    /// the last character in the string) indicates that the following
+    /// character is the access key.
     pub label: String,
+    /// Whether the item can be activated or not.
     pub enabled: bool,
+    /// True if the item is visible in the menu.
     pub visible: bool,
+    /// Icon name of the item, following the freedesktop.org icon spec.
     pub icon_name: String,
+    /// PNG data of the icon.
     pub icon_data: Vec<u8>,
+    /// The shortcut of the item. Each array represents the key press
+    /// in the list of keypresses. Each list of strings contains a list of
+    /// modifiers and then the key that is used. The modifier strings
+    /// allowed are: "Control", "Alt", "Shift" and "Super".
+    /// - A simple shortcut like Ctrl+S is represented as:
+    ///   [["Control", "S"]]
+    /// - A complex shortcut like Ctrl+Q, Alt+X is represented as:
+    ///   [["Control", "Q"], ["Alt", "X"]]
     pub shortcut: Vec<Vec<String>>,
+    /// How the menuitem feels the information it's displaying to the
+    /// user should be presented.
     pub disposition: ItemDisposition,
 }
 

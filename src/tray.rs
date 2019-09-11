@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// Describes the category of this item.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Category {
     /// The item describes the status of a generic application, for instance
     /// the current state of a media player. In the case where the category of
@@ -34,7 +34,7 @@ impl fmt::Display for Category {
 }
 
 /// Describes the status of this item or of the associated application.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Status {
     /// The item doesn't convey important information to the user, it can be
     /// considered an "idle" status and is likely that visualizations will chose
@@ -64,7 +64,7 @@ impl fmt::Display for Status {
 /// Data structure that describes extra information associated to this item,
 /// that can be visualized for instance by a tooltip (or by any other mean the
 /// visualization consider appropriate.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Hash)]
 pub struct ToolTip {
     /// Freedesktop-compliant name for an icon.
     pub icon_name: String,
@@ -88,7 +88,7 @@ impl From<ToolTip> for (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Icon {
     pub width: i32,
     pub height: i32,

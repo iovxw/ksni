@@ -34,10 +34,12 @@ pub struct TrayService<T> {
 impl<T: Tray + 'static> TrayService<T> {
     pub fn new(tray: T) -> Self {
         let (tx, rx) = mpsc::channel();
+        let prop_cache = super::PropertiesCache::new(&tray);
         TrayService {
             state: State {
                 tx: tx,
                 inner: Arc::new(Mutex::new(tray)),
+                prop_cache: Arc::new(Mutex::new(prop_cache)),
             },
             rx,
         }

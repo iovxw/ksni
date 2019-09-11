@@ -19,6 +19,7 @@ use dbus::arg::{RefArg, Variant};
 //     pub icon_theme_path: Vec<String>,
 // }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TextDirection {
     LeftToRight,
     RightToLeft,

@@ -50,15 +50,15 @@ impl fmt::Display for Status {
     }
 }
 
-pub enum MenuItem {
-    Standard(StandardItem),
+pub enum MenuItem<T> {
+    Standard(StandardItem<T>),
     Sepatator,
-    Checkmark(CheckmarkItem),
-    SubMenu(SubMenu),
-    RadioGroup(RadioGroup),
+    Checkmark(CheckmarkItem<T>),
+    SubMenu(SubMenu<T>),
+    RadioGroup(RadioGroup<T>),
 }
 
-pub struct StandardItem {
+pub struct StandardItem<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
     /// single underscore,
@@ -87,10 +87,10 @@ pub struct StandardItem {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: ItemDisposition,
-    pub activate: Box<dyn Fn()>,
+    pub activate: Box<dyn Fn(&mut T)>,
 }
 
-impl Default for StandardItem {
+impl<T> Default for StandardItem<T> {
     fn default() -> Self {
         StandardItem {
             label: String::default(),
@@ -100,19 +100,19 @@ impl Default for StandardItem {
             icon_data: Vec::default(),
             shortcut: Vec::default(),
             disposition: ItemDisposition::Normal,
-            activate: Box::new(|| {}),
+            activate: Box::new(|_this| {}),
         }
     }
 }
 
-impl From<StandardItem> for MenuItem {
-    fn from(item: StandardItem) -> Self {
+impl<T> From<StandardItem<T>> for MenuItem<T> {
+    fn from(item: StandardItem<T>) -> Self {
         MenuItem::Standard(item)
     }
 }
 
-impl From<StandardItem> for RawMenuItem {
-    fn from(item: StandardItem) -> Self {
+impl<T: 'static> From<StandardItem<T>> for RawMenuItem<T> {
+    fn from(item: StandardItem<T>) -> Self {
         let activate = item.activate;
         Self {
             r#type: ItemType::Standard,
@@ -123,16 +123,15 @@ impl From<StandardItem> for RawMenuItem {
             icon_data: item.icon_data,
             shortcut: item.shortcut,
             disposition: item.disposition,
-            on_clicked: Rc::new(move |_, _| {
-                (activate)();
-                Default::default()
+            on_clicked: Rc::new(move |this, _id| {
+                (activate)(this);
             }),
             ..Default::default()
         }
     }
 }
 
-pub struct SubMenu {
+pub struct SubMenu<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
     /// single underscore,
@@ -161,10 +160,10 @@ pub struct SubMenu {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: ItemDisposition,
-    pub submenu: Vec<MenuItem>,
+    pub submenu: Vec<MenuItem<T>>,
 }
 
-impl Default for SubMenu {
+impl<T> Default for SubMenu<T> {
     fn default() -> Self {
         Self {
             label: String::default(),
@@ -179,14 +178,14 @@ impl Default for SubMenu {
     }
 }
 
-impl From<SubMenu> for MenuItem {
-    fn from(item: SubMenu) -> Self {
+impl<T> From<SubMenu<T>> for MenuItem<T> {
+    fn from(item: SubMenu<T>) -> Self {
         MenuItem::SubMenu(item)
     }
 }
 
-impl From<SubMenu> for RawMenuItem {
-    fn from(item: SubMenu) -> Self {
+impl<T> From<SubMenu<T>> for RawMenuItem<T> {
+    fn from(item: SubMenu<T>) -> Self {
         Self {
             r#type: ItemType::Standard,
             label: item.label,
@@ -196,13 +195,13 @@ impl From<SubMenu> for RawMenuItem {
             icon_data: item.icon_data,
             shortcut: item.shortcut,
             disposition: item.disposition,
-            on_clicked: Rc::new(move |_, _| Default::default()),
+            on_clicked: Rc::new(move |_this, _id| Default::default()),
             ..Default::default()
         }
     }
 }
 
-pub struct CheckmarkItem {
+pub struct CheckmarkItem<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
     /// single underscore,
@@ -232,10 +231,10 @@ pub struct CheckmarkItem {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: ItemDisposition,
-    pub activate: Box<dyn Fn(bool) -> bool>,
+    pub activate: Box<dyn Fn(&mut T)>,
 }
 
-impl Default for CheckmarkItem {
+impl<T> Default for CheckmarkItem<T> {
     fn default() -> Self {
         CheckmarkItem {
             label: String::default(),
@@ -246,19 +245,19 @@ impl Default for CheckmarkItem {
             icon_data: Vec::default(),
             shortcut: Vec::default(),
             disposition: ItemDisposition::Normal,
-            activate: Box::new(|checked| !checked),
+            activate: Box::new(|_this| {}),
         }
     }
 }
 
-impl From<CheckmarkItem> for MenuItem {
-    fn from(item: CheckmarkItem) -> Self {
+impl<T> From<CheckmarkItem<T>> for MenuItem<T> {
+    fn from(item: CheckmarkItem<T>) -> Self {
         MenuItem::Checkmark(item)
     }
 }
 
-impl From<CheckmarkItem> for RawMenuItem {
-    fn from(item: CheckmarkItem) -> Self {
+impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
+    fn from(item: CheckmarkItem<T>) -> Self {
         let activate = item.activate;
         Self {
             r#type: ItemType::Standard,
@@ -275,41 +274,21 @@ impl From<CheckmarkItem> for RawMenuItem {
                 ToggleState::Off
             },
             disposition: item.disposition,
-            on_clicked: Rc::new(move |tree, id| {
-                let this = &mut tree[id].0;
-                let checked = this.toggle_state != ToggleState::Off;
-                let new_state = if activate(checked) {
-                    ToggleState::On
-                } else {
-                    ToggleState::Off
-                };
-                if new_state != this.toggle_state {
-                    this.toggle_state = new_state;
-                    let mut props = HashMap::with_capacity(1);
-                    props.insert(
-                        "toggle-state".into(),
-                        Variant(Box::new(new_state as i32) as Box<dyn RefArg>),
-                    );
-                    Some(crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
-                        updated_props: vec![(id as i32, props)],
-                        removed_props: vec![],
-                    })
-                } else {
-                    None
-                }
+            on_clicked: Rc::new(move |this, _id| {
+                (activate)(this);
             }),
             ..Default::default()
         }
     }
 }
 
-pub struct RadioGroup {
+pub struct RadioGroup<T> {
     pub selected: usize,
-    pub select: Box<dyn Fn(usize, usize)>,
+    pub select: Box<dyn Fn(&mut T, usize)>,
     pub options: Vec<RadioItem>,
 }
 
-impl Default for RadioGroup {
+impl<T> Default for RadioGroup<T> {
     fn default() -> Self {
         Self {
             selected: 0,
@@ -319,8 +298,8 @@ impl Default for RadioGroup {
     }
 }
 
-impl From<RadioGroup> for MenuItem {
-    fn from(item: RadioGroup) -> Self {
+impl<T> From<RadioGroup<T>> for MenuItem<T> {
+    fn from(item: RadioGroup<T>) -> Self {
         MenuItem::RadioGroup(item)
     }
 }
@@ -370,7 +349,7 @@ impl Default for RadioItem {
     }
 }
 
-pub(crate) struct RawMenuItem {
+pub(crate) struct RawMenuItem<T> {
     r#type: ItemType,
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -408,16 +387,11 @@ pub(crate) struct RawMenuItem {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     disposition: ItemDisposition,
-    pub on_clicked: Rc<
-        dyn Fn(
-            &mut Vec<(RawMenuItem, Vec<usize>)>,
-            usize,
-        ) -> Option<crate::dbus_interface::DbusmenuItemsPropertiesUpdated>,
-    >,
+    pub on_clicked: Rc<dyn Fn(&mut T, usize)>,
     vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
 }
 
-impl Clone for RawMenuItem {
+impl<T> Clone for RawMenuItem<T> {
     fn clone(&self) -> Self {
         let vendor_properties = self
             .vendor_properties
@@ -462,13 +436,13 @@ macro_rules! if_not_default_then_insert {
     };
 }
 
-impl fmt::Debug for RawMenuItem {
+impl<T> fmt::Debug for RawMenuItem<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Item {}", self.label)
     }
 }
 
-impl RawMenuItem {
+impl<T> RawMenuItem<T> {
     pub(crate) fn to_dbus_map(
         &self,
         filter: &[&str],
@@ -477,7 +451,7 @@ impl RawMenuItem {
         let mut properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>> =
             HashMap::with_capacity(11);
 
-        let default = RawMenuItem::default();
+        let default: RawMenuItem<T> = RawMenuItem::default();
         if_not_default_then_insert!(
             properties,
             item,
@@ -518,7 +492,7 @@ impl RawMenuItem {
     }
 }
 
-impl Default for RawMenuItem {
+impl<T> Default for RawMenuItem<T> {
     fn default() -> Self {
         RawMenuItem {
             r#type: ItemType::Standard,
@@ -532,7 +506,7 @@ impl Default for RawMenuItem {
             toggle_state: ToggleState::Indeterminate,
             disposition: ItemDisposition::Normal,
             //submenu: Vec::default(),
-            on_clicked: Rc::new(|_, _| Default::default()),
+            on_clicked: Rc::new(|_this, _id| Default::default()),
             vendor_properties: HashMap::default(),
         }
     }
@@ -614,8 +588,10 @@ pub enum ItemDisposition {
     Alert,
 }
 
-pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>)> {
-    let mut list: Vec<(RawMenuItem, Vec<usize>)> =
+pub(crate) fn menu_flatten<T: 'static>(
+    items: Vec<MenuItem<T>>,
+) -> Vec<(RawMenuItem<T>, Vec<usize>)> {
+    let mut list: Vec<(RawMenuItem<T>, Vec<usize>)> =
         vec![(RawMenuItem::default(), Vec::with_capacity(items.len()))];
 
     let mut stack = vec![(items, 0)]; // (menu, menu's parent)
@@ -657,10 +633,8 @@ pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>
                 MenuItem::RadioGroup(group) => {
                     let offset = list.len();
                     let on_selected = Rc::new(group.select);
-                    let current_selected = Rc::new(Cell::new(offset + group.selected));
                     for (idx, option) in group.options.into_iter().enumerate() {
                         let on_selected = on_selected.clone();
-                        let current_seleted = current_selected.clone();
                         let item = RawMenuItem {
                             r#type: ItemType::Standard,
                             label: option.label,
@@ -676,38 +650,8 @@ pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>
                                 ToggleState::Off
                             },
                             disposition: option.disposition,
-                            on_clicked: Rc::new(move |tree, id| {
-                                let this = &mut tree[id].0;
-                                if this.toggle_state == ToggleState::Off {
-                                    let prev_selected = current_seleted.get();
-                                    current_seleted.set(id);
-                                    this.toggle_state = ToggleState::On;
-                                    tree[prev_selected].0.toggle_state = ToggleState::Off;
-                                    (on_selected)(prev_selected - offset, id - offset);
-                                    let mut props_self = HashMap::with_capacity(1);
-                                    props_self.insert(
-                                        "toggle-state".into(),
-                                        Variant(
-                                            Box::new(ToggleState::On as i32) as Box<dyn RefArg>
-                                        ),
-                                    );
-                                    let mut props_prev = HashMap::with_capacity(1);
-                                    props_prev.insert(
-                                        "toggle-state".into(),
-                                        Variant(
-                                            Box::new(ToggleState::Off as i32) as Box<dyn RefArg>
-                                        ),
-                                    );
-                                    Some(crate::dbus_interface::DbusmenuItemsPropertiesUpdated {
-                                        updated_props: vec![
-                                            (id as i32, props_self),
-                                            (prev_selected as i32, props_prev),
-                                        ],
-                                        removed_props: vec![],
-                                    })
-                                } else {
-                                    None
-                                }
+                            on_clicked: Rc::new(move |this, id| {
+                                (on_selected)(this, id - offset);
                             }),
                             ..Default::default()
                         };
@@ -723,8 +667,8 @@ pub(crate) fn menu_flatten(items: Vec<MenuItem>) -> Vec<(RawMenuItem, Vec<usize>
     list
 }
 
-pub(crate) fn to_dbusmenu_variant(
-    menu: &[(RawMenuItem, Vec<usize>)],
+pub(crate) fn to_dbusmenu_variant<T>(
+    menu: &[(RawMenuItem<T>, Vec<usize>)],
     parent_id: usize,
     recursion_depth: Option<usize>,
     property_names: Vec<&str>,

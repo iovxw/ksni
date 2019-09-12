@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
 use dbus::arg::{RefArg, Variant};
@@ -9,20 +10,20 @@ use dbus::message::SignalArgs;
 mod dbus_ext;
 mod dbus_interface;
 mod freedesktop;
-mod menu;
+pub mod menu;
 mod service;
 mod tray;
 
 use dbus_interface::{
-    StatusNotifierItemNewAttentionIcon, StatusNotifierItemNewIcon,
-    StatusNotifierItemNewOverlayIcon, StatusNotifierItemNewStatus, StatusNotifierItemNewTitle,
-    StatusNotifierItemNewToolTip,
+    DbusmenuItemsPropertiesUpdated, DbusmenuLayoutUpdated, StatusNotifierItemNewAttentionIcon,
+    StatusNotifierItemNewIcon, StatusNotifierItemNewOverlayIcon, StatusNotifierItemNewStatus,
+    StatusNotifierItemNewTitle, StatusNotifierItemNewToolTip,
 };
 pub use menu::{MenuItem, TextDirection};
 pub use service::TrayService;
 pub use tray::{Category, Icon, Status, ToolTip};
 
-pub trait Tray {
+pub trait Tray: Sized {
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical
     /// representation of the item.
@@ -150,7 +151,7 @@ pub trait Tray {
         menu::TextDirection::LeftToRight
     }
 
-    fn menu(&self) -> Vec<MenuItem> {
+    fn menu(&self) -> Vec<MenuItem<Self>> {
         Default::default()
     }
 }
@@ -158,6 +159,7 @@ pub trait Tray {
 pub struct State<T: ?Sized> {
     tx: mpsc::Sender<dbus::Message>,
     inner: Arc<Mutex<T>>,
+    revision: Arc<AtomicU32>,
     prop_cache: Arc<Mutex<PropertiesCache>>,
 }
 
@@ -170,6 +172,7 @@ impl<T: Tray> State<T> {
 
     // TODO: macro?
     fn update_properties(&self) {
+        dbg!("update");
         let sni_dbus_path: dbus::Path = service::SNI_PATH.into();
         let inner = self.inner.lock().unwrap();
         let mut cache = self.prop_cache.lock().unwrap();
@@ -257,6 +260,18 @@ impl<T: Tray> State<T> {
             let msg = StatusNotifierItemNewToolTip {}.to_emit_message(&sni_dbus_path);
             self.tx.send(msg).unwrap();
         }
+    }
+    fn update_menu(&self) -> bool {
+        let revision = self.revision.fetch_add(1, Ordering::AcqRel);
+        // TODO: check layout
+        let msg = DbusmenuLayoutUpdated {
+            parent: 0,
+            revision: revision,
+        }
+        .to_emit_message(&service::MENU_PATH.into());
+        self.tx.send(msg).unwrap();
+        // TODO: diff and send ItemsPropertiesUpdated
+        true
     }
 }
 
@@ -391,6 +406,7 @@ impl<T> Clone for State<T> {
         State {
             tx: self.tx.clone(),
             inner: self.inner.clone(),
+            revision: self.revision.clone(),
             prop_cache: self.prop_cache.clone(),
         }
     }

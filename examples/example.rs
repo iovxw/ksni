@@ -1,17 +1,18 @@
-use ksni::{self, menu, tray};
+use ksni;
 
 fn main() {
-    struct MyTray;
+    #[derive(Debug)]
+    struct MyTray {
+        selected_option: usize,
+        checked: bool,
+    }
     impl ksni::Tray for MyTray {
-        type Err = std::convert::Infallible;
-        fn tray_properties() -> tray::Properties {
-            tray::Properties {
-                icon_name: "music".to_owned(),
-                ..Default::default()
-            }
+        fn icon_name(&self) -> String {
+            "music".into()
         }
-        fn menu() -> Vec<menu::MenuItem> {
-            use menu::*;
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            dbg!("menu", self);
+            use ksni::menu::*;
             vec![
                 SubMenu {
                     label: "a".into(),
@@ -44,8 +45,9 @@ fn main() {
                 .into(),
                 MenuItem::Sepatator,
                 RadioGroup {
-                    select: Box::new(|prev, current| {
-                        dbg!(prev, current);
+                    selected: self.selected_option,
+                    select: Box::new(|this: &mut Self, current| {
+                        this.selected_option = current;
                     }),
                     options: vec![
                         RadioItem {
@@ -66,14 +68,15 @@ fn main() {
                 .into(),
                 CheckmarkItem {
                     label: "Checkable".into(),
-                    checked: true,
+                    checked: self.checked,
+                    activate: Box::new(|this: &mut Self| this.checked = !this.checked),
                     ..Default::default()
                 }
                 .into(),
                 StandardItem {
                     label: "Exit".into(),
                     icon_name: "application-exit".into(),
-                    activate: Box::new(|| std::process::exit(0)),
+                    activate: Box::new(|_| std::process::exit(0)),
                     ..Default::default()
                 }
                 .into(),
@@ -81,5 +84,11 @@ fn main() {
         }
     }
 
-    ksni::run(MyTray).unwrap();
+    let service = ksni::TrayService::new(MyTray {
+        selected_option: 0,
+        checked: true,
+    });
+    let state = service.state();
+    service.spawn();
+    std::thread::sleep(std::time::Duration::from_secs(100));
 }

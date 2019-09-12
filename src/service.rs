@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -39,10 +39,14 @@ impl<T: Tray + 'static> TrayService<T> {
             state: State {
                 tx: tx,
                 inner: Arc::new(Mutex::new(tray)),
+                revision: Arc::new(AtomicU32::new(0)),
                 prop_cache: Arc::new(Mutex::new(prop_cache)),
             },
             rx,
         }
+    }
+    pub fn state(&self) -> State<T> {
+        self.state.clone()
     }
     pub fn run(self) -> Result<(), dbus::Error> {
         let name = format!(
@@ -111,7 +115,7 @@ impl<T: Tray + 'static> TrayService<T> {
         }
     }
 
-    pub fn spwan(self)
+    pub fn spawn(self)
     where
         T: Send,
     {
@@ -148,11 +152,20 @@ struct Inner<T: Tray> {
     state: State<T>,
     msgs: mpsc::Receiver<dbus::Message>,
     // A list of menu item and it's submenu
-    menu: RefCell<Vec<(menu::RawMenuItem, Vec<usize>)>>,
+    menu: RefCell<Vec<(menu::RawMenuItem<T>, Vec<usize>)>>,
     menu_path: dbus::Path<'static>,
 }
 
-impl<T: Tray> Inner<T> {
+impl<T: Tray + 'static> Inner<T> {
+    fn handle_updates(&self) {
+        dbg!("ahhh");
+        self.state.update_properties();
+        if self.state.update_menu() {
+            let state = self.state.inner.lock().unwrap();
+            *self.menu.borrow_mut() = menu::menu_flatten(T::menu(&*state));
+        }
+        self.flush_msgs();
+    }
     fn flush_msgs(&self) {
         dbus_ext::with_current(|conn| {
             while let Ok(msg) = self.msgs.try_recv() {
@@ -168,23 +181,23 @@ impl<T: Tray> fmt::Debug for Inner<T> {
     }
 }
 
-impl<T: Tray> dbus_interface::StatusNotifierItem for Inner<T> {
+impl<T: Tray + 'static> dbus_interface::StatusNotifierItem for Inner<T> {
     fn activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
         let mut model = self.state.inner.lock().unwrap();
         Tray::activate(&mut *model, x, y);
-        self.flush_msgs();
+        self.handle_updates();
         Ok(())
     }
     fn secondary_activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
         let mut model = self.state.inner.lock().unwrap();
         Tray::secondary_activate(&mut *model, x, y);
-        self.flush_msgs();
+        self.handle_updates();
         Ok(())
     }
     fn scroll(&self, delta: i32, dir: &str) -> Result<(), dbus::tree::MethodErr> {
         let mut model = self.state.inner.lock().unwrap();
         Tray::scroll(&mut *model, delta, dir);
-        self.flush_msgs();
+        self.handle_updates();
         Ok(())
     }
     fn context_menu(&self, _x: i32, _y: i32) -> Result<(), dbus::tree::MethodErr> {
@@ -265,7 +278,7 @@ impl<T: Tray> dbus_interface::StatusNotifierItem for Inner<T> {
     }
 }
 
-impl<T: Tray> dbus_interface::Dbusmenu for Inner<T> {
+impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
     fn get_layout(
         &self,
         parent_id: i32,
@@ -283,7 +296,7 @@ impl<T: Tray> dbus_interface::Dbusmenu for Inner<T> {
         dbus::tree::MethodErr,
     > {
         Ok((
-            0,
+            self.state.revision.load(Ordering::Acquire),
             crate::menu::to_dbusmenu_variant(
                 &self.menu.borrow(),
                 parent_id as usize,
@@ -335,15 +348,11 @@ impl<T: Tray> dbus_interface::Dbusmenu for Inner<T> {
         match event_id {
             "clicked" => {
                 let activate = self.menu.borrow()[id as usize].0.on_clicked.clone();
-                let m = (activate)(&mut self.menu.borrow_mut(), id as usize);
-                if let Some(msg) = m {
-                    dbus_ext::with_current(|conn| {
-                        conn.send(msg.to_emit_message(&self.menu_path))
-                            .expect("send dbus message");
-                    })
-                    .unwrap()
-                };
-                self.flush_msgs();
+                {
+                    let mut state = self.state.inner.lock().unwrap();
+                    (activate)(&mut state, id as usize);
+                }
+                self.handle_updates();
             }
             _ => (),
         }

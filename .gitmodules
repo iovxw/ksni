@@ -1,3 +1,0 @@
-[submodule "dbus-rs"]
-	path = dbus-rs
-	url = https://github.com/iovxw/dbus-rs.git

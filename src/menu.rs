@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -741,7 +740,7 @@ mod test {
     use super::*;
     #[test]
     fn test_menu_flatten() {
-        let x = vec![
+        let x: Vec<MenuItem<()>> = vec![
             SubMenu {
                 label: "a".into(),
                 submenu: vec![
@@ -794,7 +793,7 @@ mod test {
         ];
 
         let r = menu_flatten(x);
-        let expect = vec![
+        let expect: Vec<(RawMenuItem<()>, Vec<usize>)> = vec![
             (
                 RawMenuItem {
                     label: "".into(),

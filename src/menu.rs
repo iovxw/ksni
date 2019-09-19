@@ -85,7 +85,7 @@ pub struct StandardItem<T> {
     pub shortcut: Vec<Vec<String>>,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
-    pub disposition: ItemDisposition,
+    pub disposition: Disposition,
     pub activate: Box<dyn Fn(&mut T)>,
 }
 
@@ -98,7 +98,7 @@ impl<T> Default for StandardItem<T> {
             icon_name: String::default(),
             icon_data: Vec::default(),
             shortcut: Vec::default(),
-            disposition: ItemDisposition::Normal,
+            disposition: Disposition::Normal,
             activate: Box::new(|_this| {}),
         }
     }
@@ -158,7 +158,7 @@ pub struct SubMenu<T> {
     pub shortcut: Vec<Vec<String>>,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
-    pub disposition: ItemDisposition,
+    pub disposition: Disposition,
     pub submenu: Vec<MenuItem<T>>,
 }
 
@@ -171,7 +171,7 @@ impl<T> Default for SubMenu<T> {
             icon_name: String::default(),
             icon_data: Vec::default(),
             shortcut: Vec::default(),
-            disposition: ItemDisposition::Normal,
+            disposition: Disposition::Normal,
             submenu: Vec::default(),
         }
     }
@@ -229,7 +229,7 @@ pub struct CheckmarkItem<T> {
     pub shortcut: Vec<Vec<String>>,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
-    pub disposition: ItemDisposition,
+    pub disposition: Disposition,
     pub activate: Box<dyn Fn(&mut T)>,
 }
 
@@ -243,7 +243,7 @@ impl<T> Default for CheckmarkItem<T> {
             icon_name: String::default(),
             icon_data: Vec::default(),
             shortcut: Vec::default(),
-            disposition: ItemDisposition::Normal,
+            disposition: Disposition::Normal,
             activate: Box::new(|_this| {}),
         }
     }
@@ -331,7 +331,7 @@ pub struct RadioItem {
     pub shortcut: Vec<Vec<String>>,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
-    pub disposition: ItemDisposition,
+    pub disposition: Disposition,
 }
 
 impl Default for RadioItem {
@@ -343,7 +343,7 @@ impl Default for RadioItem {
             icon_name: String::default(),
             icon_data: Vec::default(),
             shortcut: Vec::default(),
-            disposition: ItemDisposition::Normal,
+            disposition: Disposition::Normal,
         }
     }
 }
@@ -385,7 +385,7 @@ pub(crate) struct RawMenuItem<T> {
     toggle_state: ToggleState,
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
-    disposition: ItemDisposition,
+    disposition: Disposition,
     pub on_clicked: Rc<dyn Fn(&mut T, usize)>,
     vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
 }
@@ -482,12 +482,114 @@ impl<T> RawMenuItem<T> {
             toggle_state,
             (|r| r as i32)
         );
+        if_not_default_then_insert!(
+            properties,
+            item,
+            default,
+            filter,
+            disposition,
+            (|r: Disposition| r.to_string())
+        );
 
         for (k, v) in item.vendor_properties {
             properties.insert(k.to_string(), v);
         }
 
         properties
+    }
+
+    pub(crate) fn diff(
+        &self,
+        other: Self,
+    ) -> Option<(HashMap<String, Variant<Box<dyn RefArg>>>, Vec<String>)> {
+        let default = Self::default();
+        let mut updated_props: HashMap<String, Variant<Box<dyn RefArg>>> = HashMap::new();
+        let mut removed_props = Vec::new();
+        if self.r#type != other.r#type {
+            if other.r#type == default.r#type {
+                removed_props.push("type".into());
+            } else {
+                updated_props.insert("type".into(), Variant(Box::new(other.r#type.to_string())));
+            }
+        }
+        if self.label != other.label {
+            if other.label == default.label {
+                removed_props.push("label".into());
+            } else {
+                updated_props.insert("label".into(), Variant(Box::new(other.label)));
+            }
+        }
+        if self.enabled != other.enabled {
+            if other.enabled == default.enabled {
+                removed_props.push("enabled".into());
+            } else {
+                updated_props.insert("enabled".into(), Variant(Box::new(other.enabled)));
+            }
+        }
+        if self.visible != other.visible {
+            if other.visible == default.visible {
+                removed_props.push("visible".into());
+            } else {
+                updated_props.insert("visible".into(), Variant(Box::new(other.visible)));
+            }
+        }
+        if self.icon_name != other.icon_name {
+            if other.icon_name == default.icon_name {
+                removed_props.push("icon-name".into());
+            } else {
+                updated_props.insert("icon-name".into(), Variant(Box::new(other.icon_name)));
+            }
+        }
+        if self.icon_data != other.icon_data {
+            if other.icon_data == default.icon_data {
+                removed_props.push("icon-data".into());
+            } else {
+                updated_props.insert("icon-data".into(), Variant(Box::new(other.icon_data)));
+            }
+        }
+        if self.shortcut != other.shortcut {
+            if other.shortcut == default.shortcut {
+                removed_props.push("shortcut".into());
+            } else {
+                updated_props.insert("shortcut".into(), Variant(Box::new(other.shortcut)));
+            }
+        }
+        if self.toggle_type != other.toggle_type {
+            if other.toggle_type == default.toggle_type {
+                removed_props.push("toggle-type".into());
+            } else {
+                updated_props.insert(
+                    "toggle-type".into(),
+                    Variant(Box::new(other.toggle_type.to_string())),
+                );
+            }
+        }
+        if self.toggle_state != other.toggle_state {
+            if other.toggle_state == default.toggle_state {
+                removed_props.push("toggle-state".into());
+            } else {
+                updated_props.insert(
+                    "toggle-state".into(),
+                    Variant(Box::new(other.toggle_state as i32)),
+                );
+            }
+        }
+        if self.disposition != other.disposition {
+            if other.disposition == default.disposition {
+                removed_props.push("disposition".into());
+            } else {
+                updated_props.insert(
+                    "disposition".into(),
+                    Variant(Box::new(other.disposition.to_string())),
+                );
+            }
+        }
+        // TODO: vendor_properties
+        if updated_props.is_empty() && removed_props.is_empty() {
+            None
+        } else {
+            Some((updated_props, removed_props))
+        }
     }
 }
 
@@ -503,7 +605,7 @@ impl<T> Default for RawMenuItem<T> {
             shortcut: Vec::default(),
             toggle_type: ToggleType::Null,
             toggle_state: ToggleState::Indeterminate,
-            disposition: ItemDisposition::Normal,
+            disposition: Disposition::Normal,
             //submenu: Vec::default(),
             on_clicked: Rc::new(|_this, _id| Default::default()),
             vendor_properties: HashMap::default(),
@@ -576,7 +678,7 @@ enum ToggleState {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ItemDisposition {
+pub enum Disposition {
     /// A standard menu item
     Normal,
     /// Providing additional information to the user
@@ -585,6 +687,19 @@ pub enum ItemDisposition {
     Warning,
     /// Something bad could potentially happen
     Alert,
+}
+
+impl fmt::Display for Disposition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        use Disposition::*;
+        let r = match self {
+            Normal => "normal",
+            Informative => "informative",
+            Warning => "warning",
+            Alert => "alert",
+        };
+        f.write_str(r)
+    }
 }
 
 pub(crate) fn menu_flatten<T: 'static>(

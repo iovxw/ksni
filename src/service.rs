@@ -271,21 +271,61 @@ impl<T: Tray + 'static> Inner<T> {
             }
         });
     }
-    fn update_menu(&self) -> bool {
+    fn update_menu(&self) {
         let new_menu = menu::menu_flatten(T::menu(&*self.state.inner.lock().unwrap()));
-        *self.menu_cache.borrow_mut() = new_menu;
-        self.revision.set(self.revision.get() + 1);
-        // TODO: check layout
-        let msg = DbusmenuLayoutUpdated {
-            parent: 0,
-            revision: self.revision.get(),
+        let mut old_menu = self.menu_cache.borrow_mut();
+
+        let mut props_updated = DbusmenuItemsPropertiesUpdated {
+            updated_props: Vec::new(),
+            removed_props: Vec::new(),
+        };
+        let mut layout_updated: Vec<i32> = Vec::new();
+        for (id, (old, new)) in old_menu
+            .iter()
+            .zip(new_menu.clone().into_iter())
+            .enumerate()
+        {
+            let (old_item, old_childs) = old;
+            let (new_item, new_childs) = new;
+            // FIXME: children-display
+            if let Some((updated_props, removed_props)) = old_item.diff(new_item) {
+                if !updated_props.is_empty() {
+                    props_updated.updated_props.push((id as i32, updated_props));
+                }
+                if !removed_props.is_empty() {
+                    props_updated.removed_props.push((id as i32, removed_props));
+                }
+            }
+            if *old_childs != new_childs {
+                layout_updated.push(id as i32);
+                dbg!(old_childs, new_childs);
+            }
         }
-        .to_emit_message(&MENU_PATH.into());
-        dbus_ext::with_current(move |conn| {
-            conn.send(msg).unwrap();
-        });
-        // TODO: diff and send ItemsPropertiesUpdated
-        true
+        dbg!(&props_updated);
+
+        if !props_updated.updated_props.is_empty()
+            || !props_updated.removed_props.is_empty()
+            || !layout_updated.is_empty()
+        {
+            *old_menu = new_menu;
+            self.revision.set(self.revision.get() + 1);
+
+            let msg = props_updated.to_emit_message(&MENU_PATH.into());
+            dbus_ext::with_current(move |conn| {
+                conn.send(msg).unwrap();
+            });
+
+            for parent in layout_updated {
+                let msg = DbusmenuLayoutUpdated {
+                    parent,
+                    revision: self.revision.get(),
+                }
+                .to_emit_message(&MENU_PATH.into());
+                dbus_ext::with_current(move |conn| {
+                    conn.send(msg).unwrap();
+                });
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod dbus_ext;
@@ -156,8 +156,7 @@ impl<T: Tray> State<T> {
             let mut inner = self.inner.lock().unwrap();
             (f)(&mut inner);
         }
-        //self.update_properties();
-        //self.update_menu();
+        self.state_changed.store(true, Ordering::Release);
     }
 }
 

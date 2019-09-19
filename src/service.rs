@@ -168,7 +168,7 @@ struct Inner<T: Tray> {
 
 impl<T: Tray + 'static> Inner<T> {
     fn update_state(&self) {
-        if self.state_changed.load(Ordering::Acquire) {
+        if self.state_changed.swap(false, Ordering::AcqRel) {
             self.update_properties();
             self.update_menu();
         }
@@ -272,6 +272,8 @@ impl<T: Tray + 'static> Inner<T> {
         });
     }
     fn update_menu(&self) -> bool {
+        let new_menu = menu::menu_flatten(T::menu(&*self.state.inner.lock().unwrap()));
+        *self.menu_cache.borrow_mut() = new_menu;
         self.revision.set(self.revision.get() + 1);
         // TODO: check layout
         let msg = DbusmenuLayoutUpdated {

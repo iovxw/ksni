@@ -5,7 +5,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -73,6 +73,7 @@ impl<T: Tray + 'static> TrayService<T> {
             state: self.state,
             state_changed: self.state_changed,
             menu_cache,
+            item_id_offset: Cell::new(0),
             revision: Cell::new(0),
             prop_cache,
         });
@@ -162,6 +163,7 @@ struct Inner<T: Tray> {
     state_changed: Arc<AtomicBool>,
     // A list of menu item and it's submenu
     menu_cache: RefCell<Vec<(menu::RawMenuItem<T>, Vec<usize>)>>,
+    item_id_offset: Cell<i32>,
     revision: Cell<u32>,
     prop_cache: RefCell<PropertiesCache>,
 }
@@ -271,6 +273,7 @@ impl<T: Tray + 'static> Inner<T> {
             }
         });
     }
+
     fn update_menu(&self) {
         let new_menu = menu::menu_flatten(T::menu(&*self.state.inner.lock().unwrap()));
         let mut old_menu = self.menu_cache.borrow_mut();
@@ -279,53 +282,145 @@ impl<T: Tray + 'static> Inner<T> {
             updated_props: Vec::new(),
             removed_props: Vec::new(),
         };
-        let mut layout_updated: Vec<i32> = Vec::new();
+        let default = crate::menu::RawMenuItem::default();
+        let mut layout_updated = false;
         for (id, (old, new)) in old_menu
             .iter()
+            .chain(std::iter::repeat(&(default, vec![])))
             .zip(new_menu.clone().into_iter())
             .enumerate()
         {
             let (old_item, old_childs) = old;
             let (new_item, new_childs) = new;
-            // FIXME: children-display
+
             if let Some((updated_props, removed_props)) = old_item.diff(new_item) {
                 if !updated_props.is_empty() {
-                    props_updated.updated_props.push((id as i32, updated_props));
+                    props_updated
+                        .updated_props
+                        .push((id as i32 + self.item_id_offset.get(), updated_props));
                 }
                 if !removed_props.is_empty() {
-                    props_updated.removed_props.push((id as i32, removed_props));
+                    props_updated
+                        .removed_props
+                        .push((id as i32 + self.item_id_offset.get(), removed_props));
                 }
             }
             if *old_childs != new_childs {
-                layout_updated.push(id as i32);
-                dbg!(old_childs, new_childs);
+                layout_updated = true;
             }
         }
-        dbg!(&props_updated);
 
-        if !props_updated.updated_props.is_empty()
-            || !props_updated.removed_props.is_empty()
-            || !layout_updated.is_empty()
+        if layout_updated {
+            // The layout is changed, just bump ID offset to invalid all items
+            self.revision.set(self.revision.get() + 1);
+            self.item_id_offset
+                .set(self.item_id_offset.get() + new_menu.len() as i32);
+            *old_menu = new_menu;
+
+            let msg = DbusmenuLayoutUpdated {
+                parent: 0,
+                revision: self.revision.get(),
+            }
+            .to_emit_message(&MENU_PATH.into());
+            dbus_ext::with_current(move |conn| {
+                conn.send(msg).unwrap();
+            });
+        } else if !props_updated.updated_props.is_empty() || !props_updated.removed_props.is_empty()
         {
             *old_menu = new_menu;
-            self.revision.set(self.revision.get() + 1);
 
             let msg = props_updated.to_emit_message(&MENU_PATH.into());
             dbus_ext::with_current(move |conn| {
                 conn.send(msg).unwrap();
             });
+        }
+    }
 
-            for parent in layout_updated {
-                let msg = DbusmenuLayoutUpdated {
-                    parent,
-                    revision: self.revision.get(),
-                }
-                .to_emit_message(&MENU_PATH.into());
-                dbus_ext::with_current(move |conn| {
-                    conn.send(msg).unwrap();
-                });
+    fn id2index(&self, id: i32) -> Option<usize> {
+        if id == 0 {
+            Some(0)
+        } else {
+            let index = id - self.item_id_offset.get();
+            if index > 0 {
+                Some(index as usize)
+            } else {
+                None
             }
         }
+    }
+
+    fn gen_dbusmenu_variant(
+        &self,
+        parent_id: i32,
+        recursion_depth: Option<usize>,
+        property_names: Vec<&str>,
+    ) -> (
+        i32,
+        HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
+        Vec<Variant<Box<dyn RefArg + 'static>>>,
+    ) {
+        if self.menu_cache.borrow().is_empty() {
+            return Default::default();
+        }
+
+        let parent_index = self.id2index(parent_id).unwrap();
+
+        // The type is Vec<Option<id, properties, Vec<submenu>, Vec<submenu_index>>>
+        let mut x: Vec<
+            Option<(
+                i32,
+                HashMap<String, Variant<Box<dyn RefArg>>>,
+                Vec<Variant<Box<dyn RefArg>>>,
+                Vec<usize>,
+            )>,
+        > = self
+            .menu_cache
+            .borrow()
+            .iter()
+            .enumerate()
+            .map(|(index, (item, submenu))| {
+                (
+                    index as i32 + self.item_id_offset.get(),
+                    item.to_dbus_map(&property_names),
+                    Vec::with_capacity(submenu.len()),
+                    submenu.clone(),
+                )
+            })
+            .map(Some)
+            .collect();
+        let mut stack = vec![parent_index];
+
+        while let Some(current) = stack.pop() {
+            let submenu_indexes = &mut x[current].as_mut().unwrap().3;
+            if submenu_indexes.is_empty() {
+                let c = x[current].as_mut().unwrap();
+                if !c.2.is_empty() {
+                    c.1.insert(
+                        "children-display".into(),
+                        Variant(Box::new("submenu".to_owned())),
+                    );
+                }
+                if let Some(parent) = stack.pop() {
+                    x.push(None);
+                    let item = x.swap_remove(current).unwrap();
+                    stack.push(parent);
+                    x[parent]
+                        .as_mut()
+                        .unwrap()
+                        .2
+                        .push(Variant(Box::new((item.0, item.1, item.2))));
+                }
+            } else {
+                stack.push(current);
+                let sub = submenu_indexes.remove(0);
+                if recursion_depth.is_none() || recursion_depth.unwrap() + 1 >= stack.len() {
+                    stack.push(sub);
+                }
+            }
+        }
+
+        let resp = x.remove(parent_index).unwrap();
+        (resp.0, resp.1, resp.2)
     }
 }
 
@@ -452,12 +547,10 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         ),
         dbus::tree::MethodErr,
     > {
-        dbg!(parent_id, recursion_depth, &property_names);
         Ok((
             self.revision.get(),
-            crate::menu::to_dbusmenu_variant(
-                &self.menu_cache.borrow(),
-                parent_id as usize,
+            self.gen_dbusmenu_variant(
+                parent_id,
                 if recursion_depth < 0 {
                     None
                 } else {
@@ -477,10 +570,11 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
     > {
         let r = ids
             .into_iter()
-            .map(|id| {
+            .map(|id| (id, self.id2index(id).unwrap()))
+            .map(|(id, index)| {
                 (
                     id,
-                    self.menu_cache.borrow()[id as usize]
+                    self.menu_cache.borrow()[index]
                         .0
                         .to_dbus_map(&property_names),
                 )
@@ -505,9 +599,11 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
     ) -> Result<(), dbus::tree::MethodErr> {
         match event_id {
             "clicked" => {
-                let activate = self.menu_cache.borrow()[id as usize].0.on_clicked.clone();
+                assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
+                let index = self.id2index(id).unwrap();
+                let activate = self.menu_cache.borrow()[index].0.on_clicked.clone();
                 self.state.update(|state| {
-                    (activate)(state, id as usize);
+                    (activate)(state, index);
                 });
                 self.update_state();
             }
@@ -519,9 +615,10 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         &self,
         events: Vec<(i32, &str, Variant<Box<dyn RefArg>>, u32)>,
     ) -> Result<Vec<i32>, dbus::tree::MethodErr> {
-        let (found, not_found) = events
-            .into_iter()
-            .partition::<Vec<_>, _>(|event| (event.0 as usize) < self.menu_cache.borrow().len());
+        let (found, not_found) = events.into_iter().partition::<Vec<_>, _>(|event| {
+            let index = self.id2index(event.0);
+            index.is_some() && index.unwrap() < self.menu_cache.borrow().len()
+        });
         if found.is_empty() {
             return Err(dbus::tree::MethodErr::invalid_arg(
                 &"None of the id in the events can be found",

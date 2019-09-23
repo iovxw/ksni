@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -121,7 +121,9 @@ impl<T: Tray + 'static> TrayService<T> {
 
         loop {
             conn.process(Duration::from_millis(50))?;
-            inner.update_state();
+            dbus_ext::with_conn(&conn, || {
+                inner.update_state();
+            });
         }
     }
 
@@ -271,7 +273,8 @@ impl<T: Tray + 'static> Inner<T> {
             for msg in dbus_msgs {
                 conn.send(msg).unwrap();
             }
-        });
+        })
+        .unwrap();
     }
 
     fn update_menu(&self) {
@@ -324,7 +327,8 @@ impl<T: Tray + 'static> Inner<T> {
             .to_emit_message(&MENU_PATH.into());
             dbus_ext::with_current(move |conn| {
                 conn.send(msg).unwrap();
-            });
+            })
+            .unwrap();
         } else if !props_updated.updated_props.is_empty() || !props_updated.removed_props.is_empty()
         {
             *old_menu = new_menu;
@@ -332,7 +336,8 @@ impl<T: Tray + 'static> Inner<T> {
             let msg = props_updated.to_emit_message(&MENU_PATH.into());
             dbus_ext::with_current(move |conn| {
                 conn.send(msg).unwrap();
-            });
+            })
+            .unwrap();
         }
     }
 

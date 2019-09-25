@@ -8,10 +8,16 @@ fn main() {
     }
     impl ksni::Tray for MyTray {
         fn icon_name(&self) -> String {
-            "music".into()
+            "help-about".into()
+        }
+        fn title(&self) -> String {
+            if self.checked {
+                "CHECKED!"
+            } else {
+                "MyTray"
+            }.into()
         }
         fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-            dbg!("menu", self);
             use ksni::menu::*;
             vec![
                 SubMenu {
@@ -86,9 +92,17 @@ fn main() {
 
     let service = ksni::TrayService::new(MyTray {
         selected_option: 0,
-        checked: true,
+        checked: false,
     });
     let state = service.state();
     service.spawn();
-    std::thread::sleep(std::time::Duration::from_secs(100));
+
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    state.update(|state: &mut MyTray| {
+        state.checked = true;
+    });
+    // Run forever
+    loop {
+        std::thread::park();
+    }
 }

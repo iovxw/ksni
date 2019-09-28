@@ -592,8 +592,9 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         id: i32,
         name: &str,
     ) -> Result<Variant<Box<dyn RefArg + 'static>>, dbus::tree::MethodErr> {
-        // FIXME
-        Err(dbus::tree::MethodErr::failed(&"unimplemented"))
+        let index = self.id2index(id).unwrap();
+        let mut props = self.menu_cache.borrow()[index].0.to_dbus_map(&[name]);
+        Ok(props.remove(name).unwrap())
     }
     fn event(
         &self,

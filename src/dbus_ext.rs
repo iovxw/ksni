@@ -11,12 +11,14 @@ thread_local! {
 pub struct NoCurrentErr;
 
 pub fn with_current<F: FnOnce(&Connection) -> R, R>(f: F) -> Result<R, NoCurrentErr> {
-    CURRENT_DBUS_CONN.with(|v| {
-        v.get().map(|conn| {
-            let conn = unsafe { conn.as_ref() };
-            f(conn)
+    CURRENT_DBUS_CONN
+        .with(|v| {
+            v.get().map(|conn| {
+                let conn = unsafe { conn.as_ref() };
+                f(conn)
+            })
         })
-    }).ok_or(NoCurrentErr)
+        .ok_or(NoCurrentErr)
 }
 
 pub fn with_conn<F: FnOnce() -> R, R>(conn: &Connection, f: F) -> R {

@@ -310,6 +310,7 @@ impl<T: Tray + 'static> Inner<T> {
             }
             if *old_childs != new_childs {
                 layout_updated = true;
+                break;
             }
         }
 

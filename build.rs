@@ -18,7 +18,9 @@ fn generate_code(interfaces: &[(&str, GenOpts)], outfile: &str) {
     let out_dir = env::var("OUT_DIR").unwrap();
     let path = Path::new(&out_dir).join(outfile);
     let mut f = File::create(path).unwrap();
-    (&mut f as &mut dyn Write).write_all(code.as_bytes()).unwrap();
+    (&mut f as &mut dyn Write)
+        .write_all(code.as_bytes())
+        .unwrap();
 }
 
 fn main() {

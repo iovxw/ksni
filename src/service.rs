@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dbus;
 use dbus::arg::{RefArg, Variant};
@@ -24,6 +24,7 @@ use crate::dbus_interface::{
     StatusNotifierItemNewIcon, StatusNotifierItemNewOverlayIcon, StatusNotifierItemNewStatus,
     StatusNotifierItemNewTitle, StatusNotifierItemNewToolTip, StatusNotifierWatcher,
 };
+use crate::error;
 use crate::freedesktop;
 use crate::menu;
 use crate::tray;
@@ -53,13 +54,13 @@ impl<T: Tray + 'static> TrayService<T> {
     pub fn state(&self) -> State<T> {
         self.state.clone()
     }
-    pub fn run(self) -> Result<(), dbus::Error> {
+    fn start_process(self) -> Result<Processor<T>, dbus::Error> {
         let name = format!(
             "org.kde.StatusNotifierItem-{}-{}",
             std::process::id(),
             COUNTER.fetch_add(1, Ordering::AcqRel)
         );
-        let mut conn = Connection::new_session()?;
+        let conn = Connection::new_session()?;
         conn.request_name(&name, true, true, false)?;
 
         let (menu_cache, prop_cache) = {
@@ -117,13 +118,53 @@ impl<T: Tray + 'static> TrayService<T> {
             }),
         );
 
-        register_to_watcher(&conn, name)?;
+        let stop = Rc::new(Cell::new(false));
+        let status_notifier_watcher = conn.with_proxy(
+            "org.kde.StatusNotifierWatcher",
+            "/StatusNotifierWatcher",
+            Duration::from_millis(1000),
+        );
+        match status_notifier_watcher.register_status_notifier_item(&name) {
+            Err(ref e) if e.name() == Some("org.freedesktop.DBus.Error.ServiceUnknown") => {
+                stop.set(!inner.state.inner.lock().unwrap().watcher_offine());
+            }
+            r => r?,
+        };
 
+        let inner2 = inner.clone();
+        let stop2 = stop.clone();
+        status_notifier_watcher.match_signal(
+            move |h: freedesktop::NameOwnerChanged, c: &Connection| {
+                if h.name == "org.kde.StatusNotifierWatcher" {
+                    if h.new_owner.is_empty() {
+                        stop2.set(!inner2.state.inner.lock().unwrap().watcher_offine());
+                    } else {
+                        if h.old_owner.is_empty() {
+                            inner2.state.inner.lock().unwrap().watcher_online();
+                        }
+                        c.with_proxy(
+                            "org.kde.StatusNotifierWatcher",
+                            "/StatusNotifierWatcher",
+                            Duration::from_millis(1000),
+                        )
+                        .register_status_notifier_item(&name)
+                        .unwrap_or_default();
+                    }
+                }
+                true
+            },
+        )?;
+
+        Ok(Processor { conn, stop, inner })
+    }
+    pub fn run(self) -> Result<(), dbus::Error> {
+        let mut service = self.start_process()?;
         loop {
-            conn.process(Duration::from_millis(50))?;
-            dbus_ext::with_conn(&conn, || {
-                inner.update_state();
-            });
+            match service.turn(None) {
+                Err(error::Error::Stopped) => return Ok(()),
+                Err(error::Error::Dbus(r)) => return Err(r),
+                Ok(_) => (),
+            }
         }
     }
 
@@ -135,32 +176,38 @@ impl<T: Tray + 'static> TrayService<T> {
     }
 }
 
-fn register_to_watcher(conn: &Connection, name: String) -> Result<(), dbus::Error> {
-    let status_notifier_watcher = conn.with_proxy(
-        "org.kde.StatusNotifierWatcher",
-        "/StatusNotifierWatcher",
-        Duration::from_millis(1000),
-    );
-    status_notifier_watcher.register_status_notifier_item(&name)?;
-
-    status_notifier_watcher.match_signal(
-        move |h: freedesktop::NameOwnerChanged, c: &Connection| {
-            if h.name == "org.kde.StatusNotifierWatcher" {
-                c.with_proxy(
-                    "org.kde.StatusNotifierWatcher",
-                    "/StatusNotifierWatcher",
-                    Duration::from_millis(1000),
-                )
-                .register_status_notifier_item(&name)
-                .unwrap_or_default();
-            }
-            true
-        },
-    )?;
-    Ok(())
+/// A running TrayService, !Send + !Sync
+struct Processor<T> {
+    conn: Connection,
+    stop: Rc<Cell<bool>>,
+    inner: Rc<Inner<T>>,
 }
 
-struct Inner<T: Tray> {
+impl<T: Tray + 'static> Processor<T> {
+    fn turn(&mut self, timeout: Option<Duration>) -> Result<(), error::Error> {
+        const PIECE: Duration = Duration::from_millis(50);
+        let now = Instant::now();
+        // Doesn't found a better way to do the "select",
+        // just polling
+        loop {
+            if self.stop.get() {
+                break Err(error::Error::Stopped);
+            }
+            dbus_ext::with_conn(&self.conn, || {
+                self.inner.update_state();
+            });
+            let wait = timeout
+                .map(|timeout| std::cmp::min(PIECE, timeout - now.elapsed()))
+                .unwrap_or(PIECE);
+            self.conn.process(wait)?;
+            if wait < PIECE {
+                break Ok(());
+            }
+        }
+    }
+}
+
+struct Inner<T> {
     state: State<T>,
     state_changed: Arc<AtomicBool>,
     // A list of menu item and it's submenu

@@ -7,6 +7,7 @@ mod freedesktop;
 pub mod menu;
 mod service;
 mod tray;
+mod error;
 
 #[doc(inline)]
 pub use menu::{MenuItem, TextDirection};
@@ -143,6 +144,11 @@ pub trait Tray: Sized {
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
         Default::default()
+    }
+
+    fn watcher_online(&self) {}
+    fn watcher_offine(&self) -> bool {
+        true
     }
 }
 

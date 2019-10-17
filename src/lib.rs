@@ -8,6 +8,7 @@ pub mod menu;
 mod service;
 mod tray;
 
+#[doc(inline)]
 pub use menu::{MenuItem, TextDirection};
 pub use service::TrayService;
 pub use tray::{Category, Icon, Status, ToolTip};

@@ -615,6 +615,7 @@ impl<T> Default for RawMenuItem<T> {
 
 /// Vendor specific types/properties
 /// will be formatted to "x-<vendor>-<name>""
+#[doc(hidden)]
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub struct VendorSpecific {
     pub vendor: String,

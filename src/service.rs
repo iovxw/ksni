@@ -119,41 +119,45 @@ impl<T: Tray + 'static> TrayService<T> {
         );
 
         let stop = Rc::new(Cell::new(false));
-        let status_notifier_watcher = conn.with_proxy(
+        let snw_object = conn.with_proxy(
             "org.kde.StatusNotifierWatcher",
             "/StatusNotifierWatcher",
-            Duration::from_millis(1000),
+            Duration::from_secs(1),
         );
-        match status_notifier_watcher.register_status_notifier_item(&name) {
+        match snw_object.register_status_notifier_item(&name) {
             Err(ref e) if e.name() == Some("org.freedesktop.DBus.Error.ServiceUnknown") => {
                 stop.set(!inner.state.inner.lock().unwrap().watcher_offine());
             }
+            Ok(()) => inner.state.inner.lock().unwrap().watcher_online(),
             r => r?,
         };
 
+        let dbus_object = conn.with_proxy(
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            Duration::from_secs(1),
+        );
         let inner2 = inner.clone();
         let stop2 = stop.clone();
-        status_notifier_watcher.match_signal(
-            move |h: freedesktop::NameOwnerChanged, c: &Connection| {
-                if h.name == "org.kde.StatusNotifierWatcher" {
-                    if h.new_owner.is_empty() {
-                        stop2.set(!inner2.state.inner.lock().unwrap().watcher_offine());
-                    } else {
-                        if h.old_owner.is_empty() {
-                            inner2.state.inner.lock().unwrap().watcher_online();
-                        }
-                        c.with_proxy(
-                            "org.kde.StatusNotifierWatcher",
-                            "/StatusNotifierWatcher",
-                            Duration::from_millis(1000),
-                        )
-                        .register_status_notifier_item(&name)
-                        .unwrap_or_default();
+        dbus_object.match_signal(move |h: freedesktop::NameOwnerChanged, c: &Connection| {
+            if h.name == "org.kde.StatusNotifierWatcher" {
+                if h.new_owner.is_empty() {
+                    stop2.set(!inner2.state.inner.lock().unwrap().watcher_offine());
+                } else {
+                    if h.old_owner.is_empty() {
+                        inner2.state.inner.lock().unwrap().watcher_online();
                     }
+                    c.with_proxy(
+                        "org.kde.StatusNotifierWatcher",
+                        "/StatusNotifierWatcher",
+                        Duration::from_secs(1),
+                    )
+                    .register_status_notifier_item(&name)
+                    .unwrap_or_default();
                 }
-                true
-            },
-        )?;
+            }
+            true
+        })?;
 
         Ok(Processor { conn, stop, inner })
     }

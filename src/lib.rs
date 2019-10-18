@@ -142,11 +142,17 @@ pub trait Tray: Sized {
         menu::TextDirection::LeftToRight
     }
 
+    /// The menu that you want to display
     fn menu(&self) -> Vec<MenuItem<Self>> {
         Default::default()
     }
 
+    /// The `org.kde.StatusNotifierWatcher` is online
     fn watcher_online(&self) {}
+
+    /// The `org.kde.StatusNotifierWatcher` is offine
+    ///
+    /// Return `false` to shutdown the tray service
     fn watcher_offine(&self) -> bool {
         true
     }

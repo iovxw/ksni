@@ -16,7 +16,7 @@ travis-ci = { repository = "iovxw/ksni" }
 maintenance = { status = "experimental" }
 
 [dependencies]
-dbus = "^0.7"
+dbus = "^0.8"
 thiserror = "^1.0"
 
 [build-dependencies]

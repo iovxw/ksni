@@ -1,6 +1,6 @@
 # ksni 
 
-[![Build Status](https://travis-ci.com/iovxw/ksni.svg?branch=master)](https://travis-ci.com/iovxw/ksni)
+[![Build Status](https://github.com/iovxw/ksni/workflows/Rust/badge.svg)](https://github.com/iovxw/ksni/actions?query=workflow%3ARust)
 [![Crates](https://img.shields.io/crates/v/ksni.svg)](https://crates.io/crates/ksni)
 [![Documentation](https://docs.rs/ksni/badge.svg)](https://docs.rs/ksni)
 

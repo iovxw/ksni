@@ -16,4 +16,4 @@ dbus = "0.7"
 thiserror = "1.0"
 
 [build-dependencies]
-dbus-codegen = "0.4"
+dbus-codegen = "0.5"

@@ -1,7 +1,0 @@
-language: rust
-rust:
-  - nightly
-addons:
-  apt:
-    packages:
-    - libdbus-1-dev

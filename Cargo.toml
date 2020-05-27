@@ -11,13 +11,9 @@ keywords = ["systray", "linux", "gui"]
 categories = ["api-bindings"]
 license = "Unlicense"
 
-[badges]
-travis-ci = { repository = "iovxw/ksni" }
-maintenance = { status = "experimental" }
-
 [dependencies]
-dbus = "^0.7"
-thiserror = "^1.0"
+dbus = "0.7"
+thiserror = "1.0"
 
 [build-dependencies]
-dbus-codegen = "^0.4"
+dbus-codegen = "0.4"

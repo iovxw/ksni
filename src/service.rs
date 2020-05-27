@@ -28,31 +28,39 @@ use crate::error;
 use crate::freedesktop;
 use crate::menu;
 use crate::tray;
-use crate::{State, Tray};
+use crate::{Handle, Tray};
 
 const SNI_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
+/// Service used to run the tray
 pub struct TrayService<T> {
-    state: State<T>,
+    tray: Handle<T>,
     state_changed: Arc<AtomicBool>,
 }
 
 impl<T: Tray + 'static> TrayService<T> {
+    /// Create a new service
     pub fn new(tray: T) -> Self {
         let state_changed = Arc::new(AtomicBool::new(false));
         TrayService {
-            state: State {
+            tray: Handle {
                 state_changed: state_changed.clone(),
                 inner: Arc::new(Mutex::new(tray)),
             },
             state_changed,
         }
     }
-    pub fn state(&self) -> State<T> {
-        self.state.clone()
+    #[doc(hidden)]
+    #[deprecated(note = "state is renamed to handle")]
+    pub fn state(&self) -> Handle<T> {
+        self.tray.clone()
+    }
+    /// Get a handle to the tray
+    pub fn handle(&self) -> Handle<T> {
+        self.tray.clone()
     }
     fn start_process(self) -> Result<Processor<T>, dbus::Error> {
         let name = format!(
@@ -64,14 +72,14 @@ impl<T: Tray + 'static> TrayService<T> {
         conn.request_name(&name, true, true, false)?;
 
         let (menu_cache, prop_cache) = {
-            let state = self.state.inner.lock().unwrap();
+            let state = self.tray.inner.lock().unwrap();
             (
                 RefCell::new(menu::menu_flatten(T::menu(&*state))),
                 RefCell::new(PropertiesCache::new(&*state)),
             )
         };
         let inner = Rc::new(Inner {
-            state: self.state,
+            tray: self.tray,
             state_changed: self.state_changed,
             menu_cache,
             item_id_offset: Cell::new(0),
@@ -126,9 +134,9 @@ impl<T: Tray + 'static> TrayService<T> {
         );
         match snw_object.register_status_notifier_item(&name) {
             Err(ref e) if e.name() == Some("org.freedesktop.DBus.Error.ServiceUnknown") => {
-                stop.set(!inner.state.inner.lock().unwrap().watcher_offine());
+                stop.set(!inner.tray.inner.lock().unwrap().watcher_offine());
             }
-            Ok(()) => inner.state.inner.lock().unwrap().watcher_online(),
+            Ok(()) => inner.tray.inner.lock().unwrap().watcher_online(),
             r => r?,
         };
 
@@ -142,10 +150,10 @@ impl<T: Tray + 'static> TrayService<T> {
         dbus_object.match_signal(move |h: freedesktop::NameOwnerChanged, c: &Connection| {
             if h.name == "org.kde.StatusNotifierWatcher" {
                 if h.new_owner.is_empty() {
-                    stop2.set(!inner2.state.inner.lock().unwrap().watcher_offine());
+                    stop2.set(!inner2.tray.inner.lock().unwrap().watcher_offine());
                 } else {
                     if h.old_owner.is_empty() {
-                        inner2.state.inner.lock().unwrap().watcher_online();
+                        inner2.tray.inner.lock().unwrap().watcher_online();
                     }
                     c.with_proxy(
                         "org.kde.StatusNotifierWatcher",
@@ -212,7 +220,7 @@ impl<T: Tray + 'static> Processor<T> {
 }
 
 struct Inner<T> {
-    state: State<T>,
+    tray: Handle<T>,
     state_changed: Arc<AtomicBool>,
     // A list of menu item and it's submenu
     menu_cache: RefCell<Vec<(menu::RawMenuItem<T>, Vec<usize>)>>,
@@ -231,7 +239,7 @@ impl<T: Tray + 'static> Inner<T> {
     // TODO: macro?
     fn update_properties(&self) {
         let sni_dbus_path: dbus::Path = SNI_PATH.into();
-        let inner = self.state.inner.lock().unwrap();
+        let inner = self.tray.inner.lock().unwrap();
         let mut prop_cache = self.prop_cache.borrow_mut();
         let mut dbusmenu_changed: HashMap<String, Variant<Box<dyn RefArg>>> = HashMap::new();
         let mut sni_changed: HashMap<String, Variant<Box<dyn RefArg>>> = HashMap::new();
@@ -329,7 +337,7 @@ impl<T: Tray + 'static> Inner<T> {
     }
 
     fn update_menu(&self) {
-        let new_menu = menu::menu_flatten(T::menu(&*self.state.inner.lock().unwrap()));
+        let new_menu = menu::menu_flatten(T::menu(&*self.tray.inner.lock().unwrap()));
         let mut old_menu = self.menu_cache.borrow_mut();
 
         let mut props_updated = DbusmenuItemsPropertiesUpdated {
@@ -489,21 +497,21 @@ impl<T: Tray> fmt::Debug for Inner<T> {
 
 impl<T: Tray + 'static> dbus_interface::StatusNotifierItem for Inner<T> {
     fn activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        self.state.update(|model| {
+        self.tray.update(|model| {
             Tray::activate(model, x, y);
         });
         self.update_state();
         Ok(())
     }
     fn secondary_activate(&self, x: i32, y: i32) -> Result<(), dbus::tree::MethodErr> {
-        self.state.update(|model| {
+        self.tray.update(|model| {
             Tray::secondary_activate(&mut *model, x, y);
         });
         self.update_state();
         Ok(())
     }
     fn scroll(&self, delta: i32, dir: &str) -> Result<(), dbus::tree::MethodErr> {
-        self.state.update(|model| {
+        self.tray.update(|model| {
             Tray::scroll(&mut *model, delta, dir);
         });
         self.update_state();
@@ -516,73 +524,73 @@ impl<T: Tray + 'static> dbus_interface::StatusNotifierItem for Inner<T> {
         Ok(false)
     }
     fn get_category(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::category(&*model).to_string())
     }
     fn get_id(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::id(&*model))
     }
     fn get_title(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::title(&*model))
     }
     fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::status(&*model).to_string())
     }
     fn get_window_id(&self) -> Result<i32, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::window_id(&*model))
     }
     fn get_menu(&self) -> Result<dbus::Path<'static>, dbus::tree::MethodErr> {
         Ok(MENU_PATH.into())
     }
     fn get_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::icon_name(&*model))
     }
     fn get_icon_theme_path(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::icon_theme_path(&*model))
     }
     fn get_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::icon_pixmap(&*model)
             .into_iter()
             .map(Into::into)
             .collect())
     }
     fn get_overlay_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::overlay_icon_name(&*model))
     }
     fn get_overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::overlay_icon_pixmap(&*model)
             .into_iter()
             .map(Into::into)
             .collect())
     }
     fn get_attention_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::attention_icon_name(&*model))
     }
     fn get_attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::attention_icon_pixmap(&*model)
             .into_iter()
             .map(Into::into)
             .collect())
     }
     fn get_attention_movie_name(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::attention_movie_name(&*model))
     }
     fn get_tool_tip(
         &self,
     ) -> Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String), dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::tool_tip(&*model).into())
     }
 }
@@ -660,7 +668,7 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
                 assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
                 let index = self.id2index(id).unwrap();
                 let activate = self.menu_cache.borrow()[index].0.on_clicked.clone();
-                self.state.update(|state| {
+                self.tray.update(|state| {
                     (activate)(state, index);
                 });
                 self.update_state();
@@ -701,11 +709,11 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         Ok(3)
     }
     fn get_text_direction(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(Tray::text_direction(&*model).to_string())
     }
     fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         Ok(match Tray::status(&*model) {
             tray::Status::Active | tray::Status::Passive => menu::Status::Normal,
             tray::Status::NeedsAttention => menu::Status::Notice,
@@ -713,7 +721,7 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         .to_string())
     }
     fn get_icon_theme_path(&self) -> Result<Vec<String>, dbus::tree::MethodErr> {
-        let model = self.state.inner.lock().unwrap();
+        let model = self.tray.inner.lock().unwrap();
         let path = Tray::icon_theme_path(&*model);
         Ok(if path.is_empty() {
             Default::default()

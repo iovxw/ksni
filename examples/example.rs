@@ -91,13 +91,13 @@ fn main() {
         selected_option: 0,
         checked: false,
     });
-    let state = service.state();
+    let handle = service.handle();
     service.spawn();
 
     std::thread::sleep(std::time::Duration::from_secs(5));
-    // We can modify the state
-    state.update(|state: &mut MyTray| {
-        state.checked = true;
+    // We can modify the handle
+    handle.update(|tray: &mut MyTray| {
+        tray.checked = true;
     });
     // Run forever
     loop {

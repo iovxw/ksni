@@ -1,3 +1,5 @@
+//! Types used to construct a menu
+
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -18,6 +20,7 @@ use dbus::arg::{RefArg, Variant};
 //     pub icon_theme_path: Vec<String>,
 // }
 
+/// Direction of texts
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TextDirection {
     LeftToRight,
@@ -49,6 +52,7 @@ impl fmt::Display for Status {
     }
 }
 
+/// All types of item
 pub enum MenuItem<T> {
     Standard(StandardItem<T>),
     Sepatator,

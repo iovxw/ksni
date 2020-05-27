@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// Describes the category of this item.
+/// Category of this item.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Category {
     /// The item describes the status of a generic application, for instance
@@ -33,7 +33,7 @@ impl fmt::Display for Category {
     }
 }
 
-/// Describes the status of this item or of the associated application.
+/// Status of this item or of the associated application.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Status {
     /// The item doesn't convey important information to the user, it can be
@@ -61,8 +61,9 @@ impl fmt::Display for Status {
     }
 }
 
-/// Data structure that describes extra information associated to this item,
-/// that can be visualized for instance by a tooltip (or by any other mean the
+/// Extra information associated to the item
+///
+/// That can be visualized for instance by a tooltip (or by any other mean the
 /// visualization consider appropriate.
 #[derive(Clone, Debug, Default, Hash)]
 pub struct ToolTip {
@@ -88,6 +89,7 @@ impl From<ToolTip> for (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
     }
 }
 
+/// An ARGB32 image
 #[derive(Clone, Debug, Hash)]
 pub struct Icon {
     pub width: i32,

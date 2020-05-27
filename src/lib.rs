@@ -14,6 +14,7 @@ pub use menu::{MenuItem, TextDirection};
 pub use service::TrayService;
 pub use tray::{Category, Icon, Status, ToolTip};
 
+/// A system tray, implement this to create your tray
 pub trait Tray: Sized {
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical
@@ -152,18 +153,26 @@ pub trait Tray: Sized {
 
     /// The `org.kde.StatusNotifierWatcher` is offine
     ///
+    /// You can setup a fallback tray here
+    ///
     /// Return `false` to shutdown the tray service
     fn watcher_offine(&self) -> bool {
         true
     }
 }
 
-pub struct State<T: ?Sized> {
+/// Handle to the tray
+pub struct Handle<T: ?Sized> {
     state_changed: Arc<AtomicBool>,
     inner: Arc<Mutex<T>>,
 }
 
-impl<T: Tray> State<T> {
+#[doc(hidden)]
+#[deprecated(note = "State is renamed to Handle")]
+pub type State<T> = Handle<T>;
+
+impl<T: Tray> Handle<T> {
+    /// Update the tray
     pub fn update<F: Fn(&mut T)>(&self, f: F) {
         {
             let mut inner = self.inner.lock().unwrap();
@@ -173,9 +182,9 @@ impl<T: Tray> State<T> {
     }
 }
 
-impl<T> Clone for State<T> {
+impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
-        State {
+        Handle {
             state_changed: self.state_changed.clone(),
             inner: self.inner.clone(),
         }

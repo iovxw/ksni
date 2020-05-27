@@ -520,74 +520,74 @@ impl<T: Tray + 'static> dbus_interface::StatusNotifierItem for Inner<T> {
     fn context_menu(&self, _x: i32, _y: i32) -> Result<(), dbus::tree::MethodErr> {
         Ok(())
     }
-    fn get_item_is_menu(&self) -> Result<bool, dbus::tree::MethodErr> {
+    fn item_is_menu(&self) -> Result<bool, dbus::tree::MethodErr> {
         Ok(false)
     }
-    fn get_category(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn category(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::category(&*model).to_string())
     }
-    fn get_id(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn id(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::id(&*model))
     }
-    fn get_title(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn title(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::title(&*model))
     }
-    fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn status(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::status(&*model).to_string())
     }
-    fn get_window_id(&self) -> Result<i32, dbus::tree::MethodErr> {
+    fn window_id(&self) -> Result<i32, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::window_id(&*model))
     }
-    fn get_menu(&self) -> Result<dbus::Path<'static>, dbus::tree::MethodErr> {
+    fn menu(&self) -> Result<dbus::Path<'static>, dbus::tree::MethodErr> {
         Ok(MENU_PATH.into())
     }
-    fn get_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::icon_name(&*model))
     }
-    fn get_icon_theme_path(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn icon_theme_path(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::icon_theme_path(&*model))
     }
-    fn get_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
+    fn icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::icon_pixmap(&*model)
             .into_iter()
             .map(Into::into)
             .collect())
     }
-    fn get_overlay_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn overlay_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::overlay_icon_name(&*model))
     }
-    fn get_overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
+    fn overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::overlay_icon_pixmap(&*model)
             .into_iter()
             .map(Into::into)
             .collect())
     }
-    fn get_attention_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn attention_icon_name(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::attention_icon_name(&*model))
     }
-    fn get_attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
+    fn attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::attention_icon_pixmap(&*model)
             .into_iter()
             .map(Into::into)
             .collect())
     }
-    fn get_attention_movie_name(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn attention_movie_name(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::attention_movie_name(&*model))
     }
-    fn get_tool_tip(
+    fn tool_tip(
         &self,
     ) -> Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String), dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
@@ -705,14 +705,14 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         // FIXME: the DBus message should set the no reply flag
         Ok(Default::default())
     }
-    fn get_version(&self) -> Result<u32, dbus::tree::MethodErr> {
+    fn version(&self) -> Result<u32, dbus::tree::MethodErr> {
         Ok(3)
     }
-    fn get_text_direction(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn text_direction(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(Tray::text_direction(&*model).to_string())
     }
-    fn get_status(&self) -> Result<String, dbus::tree::MethodErr> {
+    fn status(&self) -> Result<String, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         Ok(match Tray::status(&*model) {
             tray::Status::Active | tray::Status::Passive => menu::Status::Normal,
@@ -720,7 +720,7 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for Inner<T> {
         }
         .to_string())
     }
-    fn get_icon_theme_path(&self) -> Result<Vec<String>, dbus::tree::MethodErr> {
+    fn icon_theme_path(&self) -> Result<Vec<String>, dbus::tree::MethodErr> {
         let model = self.tray.inner.lock().unwrap();
         let path = Tray::icon_theme_path(&*model);
         Ok(if path.is_empty() {

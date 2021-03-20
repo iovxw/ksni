@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 
 mod dbus_ext;
 mod dbus_interface;
+mod error;
 mod freedesktop;
 pub mod menu;
 mod service;
 mod tray;
-mod error;
 
 #[doc(inline)]
 pub use menu::{MenuItem, TextDirection};

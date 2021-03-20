@@ -163,8 +163,8 @@ pub trait Tray: Sized {
 
 /// Handle to the tray
 pub struct Handle<T: ?Sized> {
-    state_changed: Arc<AtomicBool>,
-    inner: Arc<Mutex<T>>,
+    tray_status: TrayStatus,
+    model: Arc<Mutex<T>>,
 }
 
 #[doc(hidden)]
@@ -175,18 +175,55 @@ impl<T: Tray> Handle<T> {
     /// Update the tray
     pub fn update<F: Fn(&mut T)>(&self, f: F) {
         {
-            let mut inner = self.inner.lock().unwrap();
-            (f)(&mut inner);
+            let mut model = self.model.lock().unwrap();
+            (f)(&mut model);
         }
-        self.state_changed.store(true, Ordering::Release);
+        self.tray_status.need_update();
+    }
+
+    /// Shutdown the tray service
+    pub fn shutdown(&self) {
+        self.tray_status.stop();
     }
 }
 
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Handle {
-            state_changed: self.state_changed.clone(),
-            inner: self.inner.clone(),
+            tray_status: self.tray_status.clone(),
+            model: self.model.clone(),
         }
     }
+}
+
+#[derive(Clone, Default)]
+struct TrayStatus {
+    stop: Arc<AtomicBool>,
+    need_update: Arc<AtomicBool>,
+}
+
+impl TrayStatus {
+    fn need_update(&self) {
+        self.need_update.store(true, Ordering::Release);
+    }
+
+    fn stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
+
+    fn take(&self) -> CurrentTrayStatus {
+        if self.stop.load(Ordering::Acquire) {
+            CurrentTrayStatus::Stop
+        } else if self.need_update.swap(false, Ordering::AcqRel) {
+            CurrentTrayStatus::NeedUpdate
+        } else {
+            CurrentTrayStatus::Idle
+        }
+    }
+}
+
+enum CurrentTrayStatus {
+    NeedUpdate,
+    Stop,
+    Idle,
 }

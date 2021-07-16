@@ -635,9 +635,9 @@ impl fmt::Display for VendorSpecific {
 #[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum ItemType {
-    /// an item which can be clicked to trigger an action or
+    /// An item which can be clicked to trigger an action or show another menu
     Standard,
-    /// a separator
+    /// A separator
     Separator,
     /// Vendor specific types
     Vendor(VendorSpecific),

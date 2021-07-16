@@ -55,7 +55,7 @@ impl fmt::Display for Status {
 /// All types of item
 pub enum MenuItem<T> {
     Standard(StandardItem<T>),
-    Sepatator,
+    Separator,
     Checkmark(CheckmarkItem<T>),
     SubMenu(SubMenu<T>),
     RadioGroup(RadioGroup<T>),
@@ -638,7 +638,7 @@ enum ItemType {
     /// an item which can be clicked to trigger an action or
     Standard,
     /// a separator
-    Sepatator,
+    Separator,
     /// Vendor specific types
     Vendor(VendorSpecific),
 }
@@ -648,7 +648,7 @@ impl fmt::Display for ItemType {
         use ItemType::*;
         match self {
             Standard => f.write_str("standard"),
-            Sepatator => f.write_str("separator"),
+            Separator => f.write_str("separator"),
             Vendor(vendor) => vendor.fmt(f),
         }
     }
@@ -725,9 +725,9 @@ pub(crate) fn menu_flatten<T: 'static>(
                     // Add self to parent's submenu
                     list[parent_index].1.push(index);
                 }
-                MenuItem::Sepatator => {
+                MenuItem::Separator => {
                     let item = RawMenuItem {
-                        r#type: ItemType::Sepatator,
+                        r#type: ItemType::Separator,
                         ..Default::default()
                     };
                     let index = list.len();

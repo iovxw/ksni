@@ -56,7 +56,7 @@ impl ksni::Tray for MyTray {
                 ..Default::default()
             }
             .into(),
-            MenuItem::Sepatator,
+            MenuItem::Separator,
             RadioGroup {
                 selected: self.selected_option,
                 select: Box::new(|this: &mut Self, current| {

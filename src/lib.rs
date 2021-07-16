@@ -162,7 +162,7 @@ pub trait Tray: Sized {
 }
 
 /// Handle to the tray
-pub struct Handle<T: ?Sized> {
+pub struct Handle<T> {
     tray_status: TrayStatus,
     model: Arc<Mutex<T>>,
 }

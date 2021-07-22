@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -361,7 +362,7 @@ impl<T: Tray + 'static> InnerState<T> {
         };
         let default = crate::menu::RawMenuItem::default();
         let mut layout_updated = false;
-        for (id, (old, new)) in old_menu
+        for (index, (old, new)) in old_menu
             .iter()
             .chain(std::iter::repeat(&(default, vec![])))
             .zip(new_menu.clone().into_iter())
@@ -374,12 +375,12 @@ impl<T: Tray + 'static> InnerState<T> {
                 if !updated_props.is_empty() {
                     props_updated
                         .updated_props
-                        .push((id as i32 + self.item_id_offset.get(), updated_props));
+                        .push((self.index2id(index), updated_props));
                 }
                 if !removed_props.is_empty() {
                     props_updated
                         .removed_props
-                        .push((id as i32 + self.item_id_offset.get(), removed_props));
+                        .push((self.index2id(index), removed_props));
                 }
             }
             if *old_childs != new_childs {
@@ -392,7 +393,7 @@ impl<T: Tray + 'static> InnerState<T> {
             // The layout is changed, just bump ID offset to invalid all items
             self.revision.set(self.revision.get() + 1);
             self.item_id_offset
-                .set(self.item_id_offset.get() + new_menu.len() as i32);
+                .set(self.item_id_offset.get() + old_menu.len() as i32);
             *old_menu = new_menu;
 
             let msg = DbusmenuLayoutUpdated {
@@ -418,6 +419,7 @@ impl<T: Tray + 'static> InnerState<T> {
 
     fn id2index(&self, id: i32) -> Option<usize> {
         if id == 0 {
+            // There is always a root item 0
             Some(0)
         } else {
             let index = id - self.item_id_offset.get();
@@ -426,6 +428,18 @@ impl<T: Tray + 'static> InnerState<T> {
             } else {
                 None
             }
+        }
+    }
+
+    fn index2id(&self, index: usize) -> i32 {
+        // The ID of root item is always 0
+        if index == 0 {
+            0
+        } else {
+            <i32 as TryFrom<_>>::try_from(index)
+                .expect("index overflow")
+                .checked_add(self.item_id_offset.get())
+                .expect("id overflow")
         }
     }
 
@@ -460,7 +474,7 @@ impl<T: Tray + 'static> InnerState<T> {
             .enumerate()
             .map(|(index, (item, submenu))| {
                 (
-                    index as i32 + self.item_id_offset.get(),
+                    self.index2id(index),
                     item.to_dbus_map(&property_names),
                     Vec::with_capacity(submenu.len()),
                     submenu.clone(),

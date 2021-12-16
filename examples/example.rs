@@ -84,6 +84,9 @@ impl ksni::Tray for MyTray {
             .into(),
         ]
     }
+    fn id(&self) -> String {
+        "mytray".to_string()
+    }
 }
 
 fn main() {

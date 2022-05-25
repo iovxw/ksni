@@ -173,7 +173,7 @@ pub type State<T> = Handle<T>;
 
 impl<T: Tray> Handle<T> {
     /// Update the tray
-    pub fn update<F: Fn(&mut T)>(&self, f: F) {
+    pub fn update<F: FnMut(&mut T)>(&self, mut f: F) {
         {
             let mut model = self.model.lock().unwrap();
             (f)(&mut model);

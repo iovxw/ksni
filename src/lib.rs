@@ -173,12 +173,10 @@ pub type State<T> = Handle<T>;
 
 impl<T: Tray> Handle<T> {
     /// Update the tray
-    pub fn update<F: FnOnce(&mut T)>(&self, f: F) {
-        {
-            let mut model = self.model.lock().unwrap();
-            (f)(&mut model);
-        }
+    pub fn update<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
+        let ret = f(&mut self.model.lock().unwrap());
         self.tray_status.need_update();
+        ret
     }
 
     /// Shutdown the tray service

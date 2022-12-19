@@ -414,6 +414,8 @@ impl<T: Tray + 'static> InnerState<T> {
                 conn.send(msg).unwrap();
             })
             .unwrap();
+        } else {
+            *old_menu = new_menu;
         }
     }
 

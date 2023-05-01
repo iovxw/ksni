@@ -24,6 +24,9 @@ impl ksni::Tray for MyTray {
     fn title(&self) -> String {
         if self.checked { "CHECKED!" } else { "MyTray" }.into()
     }
+    fn id(&self) -> String {
+        "com.example.MyApplicationId".into()
+    }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
         vec![

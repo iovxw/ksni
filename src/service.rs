@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -390,7 +391,8 @@ impl<T: Tray + 'static> InnerState<T> {
         }
 
         if layout_updated {
-            // The layout is changed, just bump ID offset to invalid all items
+            // The layout has been changed, bump ID offset to invalidate all items,
+            // which is required to avoid unexpected behaviors on some system tray
             self.revision.set(self.revision.get() + 1);
             self.item_id_offset
                 .set(self.item_id_offset.get() + old_menu.len() as i32);
@@ -419,22 +421,30 @@ impl<T: Tray + 'static> InnerState<T> {
         }
     }
 
+    // Return None if item not exists
     fn id2index(&self, id: i32) -> Option<usize> {
-        if id == 0 {
-            // There is always a root item 0
-            Some(0)
+        let number_of_items = self.menu_cache.borrow().len();
+        let offset = self.item_id_offset.get();
+        if id == 0 && number_of_items > 0 {
+            // ID of the root item is always 0
+            return Some(0);
+        } else if id == offset {
+            // illegal id, bug in index2id or dbus peer
+            return None;
+        } else if id <= offset {
+            // expired id
+            return None;
+        }
+        let index: usize = (id - offset).try_into().expect("unreachable!");
+        if index < number_of_items {
+            Some(index)
         } else {
-            let index = id - self.item_id_offset.get();
-            if index > 0 {
-                Some(index as usize)
-            } else {
-                None
-            }
+            None
         }
     }
 
     fn index2id(&self, index: usize) -> i32 {
-        // The ID of root item is always 0
+        // ID of the root item is always 0
         if index == 0 {
             0
         } else {
@@ -445,21 +455,18 @@ impl<T: Tray + 'static> InnerState<T> {
         }
     }
 
-    fn gen_dbusmenu_variant(
+    // Return None if parent_id not found
+    fn gen_dbusmenu_tree(
         &self,
         parent_id: i32,
         recursion_depth: Option<usize>,
         property_names: Vec<&str>,
-    ) -> (
+    ) -> Option<(
         i32,
         HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
         Vec<Variant<Box<dyn RefArg + 'static>>>,
-    ) {
-        if self.menu_cache.borrow().is_empty() {
-            return Default::default();
-        }
-
-        let parent_index = self.id2index(parent_id).unwrap();
+    )> {
+        let parent_index = self.id2index(parent_id)?;
 
         // The type is Vec<Option<id, properties, Vec<submenu>, Vec<submenu_index>>>
         let mut x: Vec<
@@ -516,7 +523,7 @@ impl<T: Tray + 'static> InnerState<T> {
         }
 
         let resp = x.remove(parent_index).unwrap();
-        (resp.0, resp.1, resp.2)
+        Some((resp.0, resp.1, resp.2))
     }
 }
 
@@ -659,18 +666,19 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for InnerState<T> {
         ),
         dbus::MethodErr,
     > {
-        Ok((
-            self.revision.get(),
-            self.gen_dbusmenu_variant(
-                parent_id,
-                if recursion_depth < 0 {
-                    None
-                } else {
-                    Some(recursion_depth as usize)
-                },
-                property_names,
-            ),
-        ))
+        if let Some(menu_tree) = self.gen_dbusmenu_tree(
+            parent_id,
+            if recursion_depth < 0 {
+                None
+            } else {
+                Some(recursion_depth as usize)
+            },
+            property_names,
+        ) {
+            Ok((self.revision.get(), menu_tree))
+        } else {
+            Err(dbus::Error::new_failed("parentId not found").into())
+        }
     }
 
     fn get_group_properties(
@@ -681,7 +689,7 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for InnerState<T> {
     {
         let r = ids
             .into_iter()
-            .map(|id| (id, self.id2index(id).unwrap()))
+            .filter_map(|id| self.id2index(id).map(|index| (id, index)))
             .map(|(id, index)| {
                 (
                     id,
@@ -699,7 +707,9 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for InnerState<T> {
         id: i32,
         name: &str,
     ) -> Result<Variant<Box<dyn RefArg + 'static>>, dbus::MethodErr> {
-        let index = self.id2index(id).unwrap();
+        let index = self
+            .id2index(id)
+            .ok_or_else(|| dbus::Error::new_failed("id not found"))?;
         let mut props = self.menu_cache.borrow()[index].0.to_dbus_map(&[name]);
         Ok(props.remove(name).unwrap())
     }
@@ -714,7 +724,9 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for InnerState<T> {
         match event_id {
             "clicked" => {
                 assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
-                let index = self.id2index(id).unwrap();
+                let index = self
+                    .id2index(id)
+                    .ok_or_else(|| dbus::Error::new_failed("id not found"))?;
                 let activate = self.menu_cache.borrow()[index].0.on_clicked.clone();
                 self.update_immediately(|model| {
                     (activate)(model, index);
@@ -729,14 +741,13 @@ impl<T: Tray + 'static> dbus_interface::Dbusmenu for InnerState<T> {
         &self,
         events: Vec<(i32, &str, Variant<Box<dyn RefArg>>, u32)>,
     ) -> Result<Vec<i32>, dbus::MethodErr> {
-        let (found, not_found) = events.into_iter().partition::<Vec<_>, _>(|event| {
-            let index = self.id2index(event.0);
-            index.is_some() && index.unwrap() < self.menu_cache.borrow().len()
-        });
+        let (found, not_found) = events
+            .into_iter()
+            .partition::<Vec<_>, _>(|event| self.id2index(event.0).is_some());
         if found.is_empty() {
-            return Err(dbus::MethodErr::invalid_arg(
-                &"None of the id in the events can be found",
-            ));
+            return Err(
+                dbus::Error::new_failed("None of the id in the events can be found").into(),
+            );
         }
         for (id, event_id, data, timestamp) in found {
             self.event(id, event_id, data, timestamp)?;
@@ -916,4 +927,32 @@ fn hash_of<T: Hash>(v: T) -> u64 {
     let mut hasher = DefaultHasher::new();
     v.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::*;
+
+    /// gen_dbusmenu_tree should not return an empty tree when menu_cache is empty,
+    /// which was the old behavior before 421a8d9e5ac46f58ce13543df94ce3c9d85c7be2
+    #[test]
+    fn gen_dbusmenu_tree_empty() {
+        impl Tray for () {}
+        let handle = Handle {
+            tray_status: TrayStatus::default(),
+            model: Arc::new(Mutex::new(())),
+        };
+        let state = InnerState {
+            handle,
+            menu_cache: RefCell::new(Vec::new()),
+            item_id_offset: Cell::new(0),
+            revision: Cell::new(0),
+            prop_cache: RefCell::new(PropertiesCache::new(&())),
+        };
+        let r = state.gen_dbusmenu_tree(0, None, Vec::new());
+        assert!(r.is_none());
+        let r = state.gen_dbusmenu_tree(1, None, Vec::new());
+        assert!(r.is_none());
+    }
 }

@@ -52,15 +52,19 @@ impl fmt::Display for Status {
     }
 }
 
-/// All types of item
+/// All types of menu item
+///
+/// Do not use directly (except [`MenuItem::Separator`]), see examples in top level documents
 pub enum MenuItem<T> {
     Standard(StandardItem<T>),
+    /// A separator
     Separator,
     Checkmark(CheckmarkItem<T>),
     SubMenu(SubMenu<T>),
     RadioGroup(RadioGroup<T>),
 }
 
+/// Menu item, the standard one
 pub struct StandardItem<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -134,6 +138,7 @@ impl<T: 'static> From<StandardItem<T>> for RawMenuItem<T> {
     }
 }
 
+/// Menu item, a container of another menu tree
 pub struct SubMenu<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -204,6 +209,7 @@ impl<T> From<SubMenu<T>> for RawMenuItem<T> {
     }
 }
 
+/// Menu item, checkable
 pub struct CheckmarkItem<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -285,6 +291,7 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
     }
 }
 
+/// Menu item, contains [`RadioItem`]
 pub struct RadioGroup<T> {
     pub selected: usize,
     pub select: Box<dyn Fn(&mut T, usize)>,
@@ -307,6 +314,7 @@ impl<T> From<RadioGroup<T>> for MenuItem<T> {
     }
 }
 
+/// Items of [`RadioGroup`]
 pub struct RadioItem {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a

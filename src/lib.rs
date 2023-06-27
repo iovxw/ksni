@@ -1,3 +1,7 @@
+//! A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
+//!
+//! See the [README.md](https://github.com/iovxw/ksni) for an example
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +19,8 @@ pub use service::TrayService;
 pub use tray::{Category, Icon, Status, ToolTip};
 
 /// A system tray, implement this to create your tray
+///
+/// **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
 pub trait Tray: Sized {
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical

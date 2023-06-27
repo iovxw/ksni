@@ -683,6 +683,7 @@ enum ToggleState {
     Indeterminate = -1,
 }
 
+/// Item disposition
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Disposition {
     /// A standard menu item

@@ -13,6 +13,10 @@ impl ksni::Tray for MyTray {
     fn title(&self) -> String {
         if self.checked { "CHECKED!" } else { "MyTray" }.into()
     }
+    // **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
+    fn id(&self) -> String {
+        env!("CARGO_PKG_NAME").into()
+    }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
         vec![
@@ -83,9 +87,6 @@ impl ksni::Tray for MyTray {
             }
             .into(),
         ]
-    }
-    fn id(&self) -> String {
-        "mytray".to_string()
     }
 }
 

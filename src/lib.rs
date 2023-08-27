@@ -1,26 +1,14 @@
-//! A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
-//!
-//! See the [README.md](https://github.com/iovxw/ksni) for an example
-
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-
-mod dbus_ext;
-mod dbus_interface;
-mod error;
-mod freedesktop;
 pub mod menu;
+mod dbus_interface;
 mod service;
 mod tray;
 
 #[doc(inline)]
 pub use menu::{MenuItem, TextDirection};
-pub use service::TrayService;
 pub use tray::{Category, Icon, Status, ToolTip};
+pub use service::{spawn, run_async};
 
 /// A system tray, implement this to create your tray
-///
-/// **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
 pub trait Tray: Sized {
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical
@@ -157,77 +145,57 @@ pub trait Tray: Sized {
     /// The `org.kde.StatusNotifierWatcher` is online
     fn watcher_online(&self) {}
 
-    /// The `org.kde.StatusNotifierWatcher` is offine
+    /// The `org.kde.StatusNotifierWatcher` is offline
     ///
     /// You can setup a fallback tray here
     ///
     /// Return `false` to shutdown the tray service
-    fn watcher_offine(&self) -> bool {
+    fn watcher_offline(&self) -> bool {
         true
     }
 }
 
-/// Handle to the tray
-pub struct Handle<T> {
-    tray_status: TrayStatus,
-    model: Arc<Mutex<T>>,
+pub enum ClientRequest<T> {
+    Update(Box<dyn FnOnce(&mut T) + Send>),
+    Shutdown,
 }
 
-#[doc(hidden)]
-#[deprecated(note = "State is renamed to Handle")]
-pub type State<T> = Handle<T>;
+#[derive(thiserror::Error, Debug)]
+pub enum ClientError<T> {
+    #[error("zbus error: {0}")]
+    Dbus(#[from] zbus::Error),
+    #[error("recv error: {0}")]
+    RecvError(#[from] std::sync::mpsc::RecvError),
+    #[error("send error: {0}")]
+    SendError(#[from] std::sync::mpsc::SendError<ClientRequest<T>>),
+    #[error("send error: {0}")]
+    TokioSendError(#[from] tokio::sync::mpsc::error::SendError<ClientRequest<T>>),
+}
 
-impl<T: Tray> Handle<T> {
-    /// Update the tray
-    pub fn update<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
-        let ret = f(&mut self.model.lock().unwrap());
-        self.tray_status.need_update();
-        ret
+/// Handle to the tray
+pub struct Handle<T> {
+    sender: tokio::sync::mpsc::UnboundedSender<ClientRequest<T>>,
+}
+
+impl<T> Handle<T> {
+    pub fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(&self, f: F) -> Result<R, ClientError<T>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.sender.send(ClientRequest::Update(Box::new(move |t: &mut T| {
+            let _ = tx.send((f)(t));
+        })))?;
+        Ok(rx.recv()?)
     }
 
-    /// Shutdown the tray service
-    pub fn shutdown(&self) {
-        self.tray_status.stop();
+    pub fn shutdown(&self) -> Result<(), ClientError<T>> {
+        // TODO: use a channel to wait for shutdown to finish?
+        Ok(self.sender.send(ClientRequest::Shutdown)?)
     }
 }
 
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Handle {
-            tray_status: self.tray_status.clone(),
-            model: self.model.clone(),
+            sender: self.sender.clone(),
         }
     }
-}
-
-#[derive(Clone, Default)]
-struct TrayStatus {
-    stop: Arc<AtomicBool>,
-    need_update: Arc<AtomicBool>,
-}
-
-impl TrayStatus {
-    fn need_update(&self) {
-        self.need_update.store(true, Ordering::Release);
-    }
-
-    fn stop(&self) {
-        self.stop.store(true, Ordering::Release);
-    }
-
-    fn take(&self) -> CurrentTrayStatus {
-        if self.stop.load(Ordering::Acquire) {
-            CurrentTrayStatus::Stop
-        } else if self.need_update.swap(false, Ordering::AcqRel) {
-            CurrentTrayStatus::NeedUpdate
-        } else {
-            CurrentTrayStatus::Idle
-        }
-    }
-}
-
-enum CurrentTrayStatus {
-    NeedUpdate,
-    Stop,
-    Idle,
 }

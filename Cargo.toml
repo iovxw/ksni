@@ -12,9 +12,8 @@ categories = ["api-bindings"]
 license = "Unlicense"
 
 [dependencies]
-dbus = { version = "0.9" }
-dbus-tree = { version = "0.9" }
-thiserror = "1.0"
-
-[build-dependencies]
-dbus-codegen = { version = "0.9" }
+futures = { version = "0.3.28", default-features = false }
+serde = { version = "1.0.188", features = ["derive"] }
+thiserror = "1.0.47"
+tokio = { version = "1.32.0", features = ["rt", "macros"] }
+zbus = { version = "3.14.1", features = ["tokio"], default-features = false }

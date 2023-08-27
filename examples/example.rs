@@ -91,16 +91,14 @@ impl ksni::Tray for MyTray {
 }
 
 fn main() {
-    let service = ksni::TrayService::new(MyTray {
+    let handle = ksni::spawn(MyTray {
         selected_option: 0,
         checked: false,
-    });
-    let handle = service.handle();
-    service.spawn();
+    }).unwrap();
 
     std::thread::sleep(std::time::Duration::from_secs(5));
     // We can modify the handle
-    handle.update(|tray: &mut MyTray| {
+    let _ = handle.update(|tray: &mut MyTray| {
         tray.checked = true;
     });
     // Run forever

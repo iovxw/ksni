@@ -387,6 +387,7 @@ impl<T: Tray + Send + 'static> Service<T> {
         }
     }
 
+    // Return None if parent_id not found
     fn gen_dbusmenu_tree(
         &self,
         parent_id: i32,

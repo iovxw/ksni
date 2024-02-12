@@ -1,3 +1,7 @@
+//! A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
+//!
+//! See the [README.md](https://github.com/iovxw/ksni) for an example
+
 pub mod menu;
 mod dbus_interface;
 mod service;
@@ -9,6 +13,8 @@ pub use tray::{Category, Icon, Status, ToolTip};
 pub use service::{spawn, run_async};
 
 /// A system tray, implement this to create your tray
+///
+/// **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
 pub trait Tray: Sized {
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical
@@ -178,6 +184,7 @@ pub struct Handle<T> {
 }
 
 impl<T> Handle<T> {
+    /// Update the tray
     pub fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(&self, f: F) -> Result<R, ClientError<T>> {
         let (tx, rx) = std::sync::mpsc::channel();
         self.sender.send(ClientRequest::Update(Box::new(move |t: &mut T| {
@@ -186,6 +193,7 @@ impl<T> Handle<T> {
         Ok(rx.recv()?)
     }
 
+    /// Shutdown the tray service
     pub fn shutdown(&self) -> Result<(), ClientError<T>> {
         // TODO: use a channel to wait for shutdown to finish?
         Ok(self.sender.send(ClientRequest::Shutdown)?)

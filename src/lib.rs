@@ -173,10 +173,6 @@ pub struct Handle<T> {
     model: Arc<Mutex<T>>,
 }
 
-#[doc(hidden)]
-#[deprecated(note = "State is renamed to Handle")]
-pub type State<T> = Handle<T>;
-
 impl<T: Tray> Handle<T> {
     /// Update the tray
     pub fn update<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {

@@ -54,12 +54,6 @@ impl<T: Tray + 'static> TrayService<T> {
         }
     }
 
-    #[doc(hidden)]
-    #[deprecated(note = "state is renamed to handle")]
-    pub fn state(&self) -> Handle<T> {
-        self.tray.clone()
-    }
-
     /// Get a handle of the tray
     pub fn handle(&self) -> Handle<T> {
         self.tray.clone()

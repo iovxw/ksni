@@ -155,7 +155,7 @@ impl<T: Tray + 'static> TrayService<T> {
         );
         match snw_object.register_status_notifier_item(&name) {
             Err(ref e) if e.name() == Some("org.freedesktop.DBus.Error.ServiceUnknown") => {
-                if !inner.handle.model.lock().unwrap().watcher_offine() {
+                if !inner.handle.model.lock().unwrap().watcher_offline() {
                     inner.handle.tray_status.stop();
                 }
             }
@@ -173,7 +173,7 @@ impl<T: Tray + 'static> TrayService<T> {
             move |h: freedesktop::NameOwnerChanged, c: &LocalConnection, _: &dbus::Message| {
                 if h.name == "org.kde.StatusNotifierWatcher" {
                     if h.new_owner.is_empty() {
-                        if !inner2.handle.model.lock().unwrap().watcher_offine() {
+                        if !inner2.handle.model.lock().unwrap().watcher_offline() {
                             inner2.handle.tray_status.stop();
                         }
                     } else {

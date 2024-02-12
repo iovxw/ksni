@@ -157,12 +157,12 @@ pub trait Tray: Sized {
     /// The `org.kde.StatusNotifierWatcher` is online
     fn watcher_online(&self) {}
 
-    /// The `org.kde.StatusNotifierWatcher` is offine
+    /// The `org.kde.StatusNotifierWatcher` is offline
     ///
     /// You can setup a fallback tray here
     ///
     /// Return `false` to shutdown the tray service
-    fn watcher_offine(&self) -> bool {
+    fn watcher_offline(&self) -> bool {
         true
     }
 }

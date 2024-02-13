@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-use dbus::arg::{RefArg, Variant};
+use zbus::zvariant::{Value, OwnedValue};
 
 // pub struct Properties {
 //     /// Tells if the menus are in a normal state or they believe that they
@@ -94,7 +94,7 @@ pub struct StandardItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
-    pub activate: Box<dyn Fn(&mut T)>,
+    pub activate: Box<dyn Fn(&mut T) + Send + Sync>,
 }
 
 impl<T> Default for StandardItem<T> {
@@ -130,9 +130,9 @@ impl<T: 'static> From<StandardItem<T>> for RawMenuItem<T> {
             icon_data: item.icon_data,
             shortcut: item.shortcut,
             disposition: item.disposition,
-            on_clicked: Rc::new(move |this, _id| {
+            on_clicked: Arc::new(Mutex::new(move |this: &mut T, _id| {
                 (activate)(this);
-            }),
+            })),
             ..Default::default()
         }
     }
@@ -203,7 +203,7 @@ impl<T> From<SubMenu<T>> for RawMenuItem<T> {
             icon_data: item.icon_data,
             shortcut: item.shortcut,
             disposition: item.disposition,
-            on_clicked: Rc::new(move |_this, _id| Default::default()),
+            on_clicked: Arc::new(Mutex::new(move |_this: &mut T, _id| Default::default())),
             ..Default::default()
         }
     }
@@ -240,7 +240,7 @@ pub struct CheckmarkItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
-    pub activate: Box<dyn Fn(&mut T)>,
+    pub activate: Box<dyn Fn(&mut T) + Send + Sync>,
 }
 
 impl<T> Default for CheckmarkItem<T> {
@@ -283,9 +283,9 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
                 ToggleState::Off
             },
             disposition: item.disposition,
-            on_clicked: Rc::new(move |this, _id| {
+            on_clicked: Arc::new(Mutex::new(move |this: &mut T, _id| {
                 (activate)(this);
-            }),
+            })),
             ..Default::default()
         }
     }
@@ -294,7 +294,7 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
 /// Menu item, contains [`RadioItem`]
 pub struct RadioGroup<T> {
     pub selected: usize,
-    pub select: Box<dyn Fn(&mut T, usize)>,
+    pub select: Box<dyn Fn(&mut T, usize) + Send + Sync>,
     pub options: Vec<RadioItem>,
 }
 
@@ -398,18 +398,11 @@ pub(crate) struct RawMenuItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     disposition: Disposition,
-    pub on_clicked: Rc<dyn Fn(&mut T, usize)>,
-    vendor_properties: HashMap<VendorSpecific, Variant<Box<dyn RefArg + 'static>>>,
+    pub on_clicked: Arc<Mutex<dyn Fn(&mut T, usize) + Send + Sync>>,
 }
 
 impl<T> Clone for RawMenuItem<T> {
     fn clone(&self) -> Self {
-        let vendor_properties = self
-            .vendor_properties
-            .iter()
-            .map(|(k, v)| (k.clone(), Variant(v.0.box_clone())))
-            .collect();
-
         RawMenuItem {
             r#type: self.r#type.clone(),
             label: self.label.clone(),
@@ -422,7 +415,6 @@ impl<T> Clone for RawMenuItem<T> {
             toggle_state: self.toggle_state,
             disposition: self.disposition,
             on_clicked: self.on_clicked.clone(),
-            vendor_properties,
         }
     }
 }
@@ -436,12 +428,12 @@ macro_rules! if_not_default_then_insert {
         if_not_default_then_insert!($map, $item, $default, $filter, $property, name, $to_refarg);
     }};
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $property_name: tt, $to_refarg: tt) => {
-        if ($filter.is_empty() || $filter.contains(&&*$property_name))
+        if ($filter.is_empty() || $filter.contains(&$property_name.to_string()))
             && $item.$property != $default.$property
         {
             $map.insert(
                 $property_name.to_string(),
-                Variant(Box::new($to_refarg($item.$property))),
+                Value::from($to_refarg($item.$property)).into(),
             );
         }
     };
@@ -456,10 +448,10 @@ impl<T> fmt::Debug for RawMenuItem<T> {
 impl<T> RawMenuItem<T> {
     pub(crate) fn to_dbus_map(
         &self,
-        filter: &[&str],
-    ) -> HashMap<String, Variant<Box<dyn RefArg + 'static>>> {
+        filter: &Vec<String>,
+    ) -> HashMap<String, OwnedValue> {
         let item = self.clone();
-        let mut properties: HashMap<String, Variant<Box<dyn RefArg + 'static>>> =
+        let mut properties: HashMap<String, OwnedValue> =
             HashMap::with_capacity(11);
 
         let default: RawMenuItem<T> = RawMenuItem::default();
@@ -503,67 +495,63 @@ impl<T> RawMenuItem<T> {
             (|r: Disposition| r.to_string())
         );
 
-        for (k, v) in item.vendor_properties {
-            properties.insert(k.to_string(), v);
-        }
-
         properties
     }
 
     pub(crate) fn diff(
         &self,
         other: Self,
-    ) -> Option<(HashMap<String, Variant<Box<dyn RefArg>>>, Vec<String>)> {
+    ) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
         let default = Self::default();
-        let mut updated_props: HashMap<String, Variant<Box<dyn RefArg>>> = HashMap::new();
+        let mut updated_props: HashMap<String, OwnedValue> = HashMap::new();
         let mut removed_props = Vec::new();
         if self.r#type != other.r#type {
             if other.r#type == default.r#type {
                 removed_props.push("type".into());
             } else {
-                updated_props.insert("type".into(), Variant(Box::new(other.r#type.to_string())));
+                updated_props.insert("type".into(), Value::from(other.r#type.to_string()).into());
             }
         }
         if self.label != other.label {
             if other.label == default.label {
                 removed_props.push("label".into());
             } else {
-                updated_props.insert("label".into(), Variant(Box::new(other.label)));
+                updated_props.insert("label".into(), Value::from(other.label).into());
             }
         }
         if self.enabled != other.enabled {
             if other.enabled == default.enabled {
                 removed_props.push("enabled".into());
             } else {
-                updated_props.insert("enabled".into(), Variant(Box::new(other.enabled)));
+                updated_props.insert("enabled".into(), Value::from(other.enabled).into());
             }
         }
         if self.visible != other.visible {
             if other.visible == default.visible {
                 removed_props.push("visible".into());
             } else {
-                updated_props.insert("visible".into(), Variant(Box::new(other.visible)));
+                updated_props.insert("visible".into(), Value::from(other.visible).into());
             }
         }
         if self.icon_name != other.icon_name {
             if other.icon_name == default.icon_name {
                 removed_props.push("icon-name".into());
             } else {
-                updated_props.insert("icon-name".into(), Variant(Box::new(other.icon_name)));
+                updated_props.insert("icon-name".into(), Value::from(other.icon_name).into());
             }
         }
         if self.icon_data != other.icon_data {
             if other.icon_data == default.icon_data {
                 removed_props.push("icon-data".into());
             } else {
-                updated_props.insert("icon-data".into(), Variant(Box::new(other.icon_data)));
+                updated_props.insert("icon-data".into(), Value::from(other.icon_data).into());
             }
         }
         if self.shortcut != other.shortcut {
             if other.shortcut == default.shortcut {
                 removed_props.push("shortcut".into());
             } else {
-                updated_props.insert("shortcut".into(), Variant(Box::new(other.shortcut)));
+                updated_props.insert("shortcut".into(), Value::from(other.shortcut).into());
             }
         }
         if self.toggle_type != other.toggle_type {
@@ -572,7 +560,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "toggle-type".into(),
-                    Variant(Box::new(other.toggle_type.to_string())),
+                    Value::from(other.toggle_type.to_string()).into(),
                 );
             }
         }
@@ -582,7 +570,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "toggle-state".into(),
-                    Variant(Box::new(other.toggle_state as i32)),
+                    OwnedValue::from(other.toggle_state as i32),
                 );
             }
         }
@@ -592,11 +580,10 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "disposition".into(),
-                    Variant(Box::new(other.disposition.to_string())),
+                    Value::from(other.disposition.to_string()).into(),
                 );
             }
         }
-        // TODO: vendor_properties
         if updated_props.is_empty() && removed_props.is_empty() {
             None
         } else {
@@ -619,24 +606,8 @@ impl<T> Default for RawMenuItem<T> {
             toggle_state: ToggleState::Indeterminate,
             disposition: Disposition::Normal,
             //submenu: Vec::default(),
-            on_clicked: Rc::new(|_this, _id| Default::default()),
-            vendor_properties: HashMap::default(),
+            on_clicked: Arc::new(Mutex::new(|_this: &mut T, _id| Default::default())),
         }
-    }
-}
-
-/// Vendor specific types/properties
-/// will be formatted to "x-<vendor>-<name>""
-#[doc(hidden)]
-#[derive(Debug, Hash, Eq, PartialEq, Clone)]
-pub struct VendorSpecific {
-    pub vendor: String,
-    pub name: String,
-}
-
-impl fmt::Display for VendorSpecific {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "x-{}-{}", self.vendor, self.name)
     }
 }
 
@@ -647,8 +618,6 @@ enum ItemType {
     Standard,
     /// A separator
     Separator,
-    /// Vendor specific types
-    Vendor(VendorSpecific),
 }
 
 impl fmt::Display for ItemType {
@@ -657,7 +626,6 @@ impl fmt::Display for ItemType {
         match self {
             Standard => f.write_str("standard"),
             Separator => f.write_str("separator"),
-            Vendor(vendor) => vendor.fmt(f),
         }
     }
 }
@@ -691,7 +659,6 @@ enum ToggleState {
     Indeterminate = -1,
 }
 
-/// Item disposition
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Disposition {
     /// A standard menu item
@@ -704,6 +671,7 @@ pub enum Disposition {
     Alert,
 }
 
+/// Item disposition
 impl fmt::Display for Disposition {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use Disposition::*;
@@ -761,7 +729,7 @@ pub(crate) fn menu_flatten<T: 'static>(
                 }
                 MenuItem::RadioGroup(group) => {
                     let offset = list.len();
-                    let on_selected = Rc::new(group.select);
+                    let on_selected = Arc::new(group.select);
                     for (idx, option) in group.options.into_iter().enumerate() {
                         let on_selected = on_selected.clone();
                         let item = RawMenuItem {
@@ -779,9 +747,9 @@ pub(crate) fn menu_flatten<T: 'static>(
                                 ToggleState::Off
                             },
                             disposition: option.disposition,
-                            on_clicked: Rc::new(move |this, id| {
+                            on_clicked: Arc::new(Mutex::new(move |this: &mut T, id| {
                                 (on_selected)(this, id - offset);
-                            }),
+                            })),
                             ..Default::default()
                         };
                         let index = list.len();

@@ -1,360 +1,314 @@
-use std::cell::Cell;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::convert::TryInto;
-use std::fmt;
+use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
 
-use dbus;
-use dbus::arg::{RefArg, Variant};
-use dbus::blocking::stdintf::org_freedesktop_dbus::PropertiesPropertiesChanged;
-use dbus::blocking::LocalConnection;
-use dbus::channel::{MatchingReceiver, Sender};
-use dbus::message::SignalArgs;
-use dbus::message::{MatchRule, MessageType};
+use futures::stream::StreamExt;
+use zbus::Connection;
+use zbus::fdo::DBusProxy;
+use zbus::zvariant::{Value, OwnedValue, Str};
 
-use crate::dbus_ext;
-use crate::dbus_interface;
 use crate::dbus_interface::{
-    DbusmenuItemsPropertiesUpdated, DbusmenuLayoutUpdated, StatusNotifierItemNewAttentionIcon,
-    StatusNotifierItemNewIcon, StatusNotifierItemNewOverlayIcon, StatusNotifierItemNewStatus,
-    StatusNotifierItemNewTitle, StatusNotifierItemNewToolTip, StatusNotifierWatcher,
+    SNI_PATH, MENU_PATH,
+    StatusNotifierWatcherProxy,
+    StatusNotifierItem, SniMessage, SniProperty,
+    DbusMenu, DbusMenuMessage, DbusMenuProperty,
+    LayoutItem,
 };
-use crate::error;
-use crate::freedesktop;
+
 use crate::menu;
 use crate::tray;
-use crate::{Handle, Tray};
-
-const SNI_PATH: &str = "/StatusNotifierItem";
-const MENU_PATH: &str = "/MenuBar";
+use crate::{Handle, Tray, ClientRequest};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-/// Service of the tray
-pub struct TrayService<T> {
-    tray: Handle<T>,
+// TODO: don't use zbus result publicly(?)
+pub fn spawn<T: Tray + Send + 'static>(tray: T) -> zbus::Result<Handle<T>> {
+    let (client_tx, client_rx) = tokio::sync::mpsc::unbounded_channel::<ClientRequest<T>>();
+    std::thread::Builder::new()
+        .name("ksni-tokio".into())
+        .spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio::new_current_thread()");
+            rt.block_on(async move { let _ = run_async(tray, client_rx).await; });
+        })
+        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+
+    Ok(Handle { sender: client_tx })
 }
 
-impl<T: Tray + 'static> TrayService<T> {
-    /// Create a new service
-    pub fn new(tray: T) -> Self {
-        let tray_state = crate::TrayStatus::default();
-        TrayService {
-            tray: Handle {
-                model: Arc::new(Mutex::new(tray)),
-                tray_status: tray_state.clone(),
-            },
-        }
-    }
+pub async fn run_async<T: Tray + Send + 'static>(tray: T, mut client_rx: tokio::sync::mpsc::UnboundedReceiver<ClientRequest<T>>) -> zbus::Result<()> {
+    let conn = Connection::session().await.unwrap();
+    let name = format!(
+        "org.kde.StatusNotifierItem-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::AcqRel)
+    );
 
-    /// Get a handle of the tray
-    pub fn handle(&self) -> Handle<T> {
-        self.tray.clone()
-    }
+    let (sni_obj, mut sni_rx) = StatusNotifierItem::new();
+    let (menu_obj, mut menu_rx) = DbusMenu::new();
 
-    /// Run the service in current thread
-    pub fn run(self) -> Result<(), dbus::Error> {
-        let mut service = self.build_processor()?;
-        loop {
-            match service.turn(None) {
-                Err(error::Error::Stopped) => return Ok(()),
-                Err(error::Error::Dbus(r)) => return Err(r),
-                Ok(_) => (),
+    conn.object_server()
+        .at(SNI_PATH, sni_obj)
+        .await?;
+    conn.object_server()
+        .at(MENU_PATH, menu_obj)
+        .await?;
+    conn.request_name(name.as_str()).await?;
+
+    let snw_object = StatusNotifierWatcherProxy::new(&conn).await?;
+    let register_result = snw_object.register_status_notifier_item(&name).await;
+    if let Err(zbus::Error::FDO(err)) = &register_result {
+        if let zbus::fdo::Error::ServiceUnknown(_) = **err {
+            if !tray.watcher_offline() {
+                return Ok(());
             }
+        } else {
+            register_result?;
         }
+    } else {
+        tray.watcher_online();
     }
 
-    /// Run the service in a new thread
-    pub fn spawn(self)
-    where
-        T: Send,
-    {
-        thread::spawn(|| self.run().unwrap());
-    }
+    let dbus_object = DBusProxy::new(&conn).await?;
+    let mut name_changed_signal = dbus_object
+        .receive_name_owner_changed_with_args(&[(0, "org.kde.StatusNotifierWatcher")])
+        .await?;
 
-    fn build_processor(self) -> Result<Processor<T>, dbus::Error> {
-        let name = format!(
-            "org.kde.StatusNotifierItem-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::AcqRel)
-        );
-        let conn = LocalConnection::new_session()?;
-        conn.request_name(&name, true, true, false)?;
-
-        let (menu_cache, prop_cache) = {
-            let state = self.tray.model.lock().unwrap();
-            (
-                RefCell::new(menu::menu_flatten(T::menu(&*state))),
-                RefCell::new(PropertiesCache::new(&*state)),
-            )
-        };
-        let inner = Rc::new(InnerState {
-            handle: self.tray,
-            menu_cache,
-            item_id_offset: Cell::new(0),
-            revision: Cell::new(0),
-            prop_cache,
-        });
-
-        let tray_service2 = inner.clone();
-        let tray_service3 = inner.clone();
-        let f = dbus_tree::Factory::new_fn::<()>();
-        let sni_interface = dbus_interface::status_notifier_item_server(&f, (), move |_| {
-            tray_service2.clone() as Rc<dyn dbus_interface::StatusNotifierItem>
-        });
-        let menu_interface = dbus_interface::dbusmenu_server(&f, (), move |_| {
-            tray_service3.clone() as Rc<dyn dbus_interface::Dbusmenu>
-        });
-        let tree = f
-            .tree(())
-            .add(
-                f.object_path(SNI_PATH, ())
-                    .introspectable()
-                    .add(sni_interface),
-            )
-            .add(
-                f.object_path(MENU_PATH, ())
-                    .introspectable()
-                    .add(menu_interface),
-            )
-            // Add root path, to help introspection from debugging tools
-            .add(f.object_path("/", ()).introspectable());
-        let mut rule = MatchRule::new();
-        rule.msg_type = Some(MessageType::MethodCall);
-        conn.start_receive(
-            rule,
-            Box::new(move |msg, c| {
-                dbus_ext::with_conn(c, || {
-                    if let Some(replies) = tree.handle(&msg) {
-                        for r in replies {
-                            let _ = c.send(r);
+    let menu_cache = menu::menu_flatten(T::menu(&tray));
+    let prop_cache = PropertiesCache::new(&tray);
+    let mut service = Service {
+        conn,
+        tray,
+        menu_cache,
+        prop_cache,
+        item_id_offset: 0,
+        revision: 0,
+    };
+    loop {
+        tokio::select! {
+            Some(event) = name_changed_signal.next() => {
+                if let Ok(args) = event.args() {
+                    match args.new_owner().as_ref() {
+                        Some(_new_owner) => {
+                            service.tray.watcher_online();
+                            let _ = snw_object.register_status_notifier_item(&name).await;
+                        }
+                        None => {
+                            if !service.tray.watcher_offline() {
+                                break Ok(());
+                            }
                         }
                     }
-                });
-                true
-            }),
-        );
-
-        let snw_object = conn.with_proxy(
-            "org.kde.StatusNotifierWatcher",
-            "/StatusNotifierWatcher",
-            Duration::from_secs(1),
-        );
-        match snw_object.register_status_notifier_item(&name) {
-            Err(ref e) if e.name() == Some("org.freedesktop.DBus.Error.ServiceUnknown") => {
-                if !inner.handle.model.lock().unwrap().watcher_offline() {
-                    inner.handle.tray_status.stop();
                 }
             }
-            Ok(()) => inner.handle.model.lock().unwrap().watcher_online(),
-            r => r?,
-        };
-
-        let dbus_object = conn.with_proxy(
-            "org.freedesktop.DBus",
-            "/org/freedesktop/DBus",
-            Duration::from_secs(1),
-        );
-        let inner2 = inner.clone();
-        dbus_object.match_signal(
-            move |h: freedesktop::NameOwnerChanged, c: &LocalConnection, _: &dbus::Message| {
-                if h.name == "org.kde.StatusNotifierWatcher" {
-                    if h.new_owner.is_empty() {
-                        if !inner2.handle.model.lock().unwrap().watcher_offline() {
-                            inner2.handle.tray_status.stop();
-                        }
-                    } else {
-                        if h.old_owner.is_empty() {
-                            inner2.handle.model.lock().unwrap().watcher_online();
-                        }
-                        c.with_proxy(
-                            "org.kde.StatusNotifierWatcher",
-                            "/StatusNotifierWatcher",
-                            Duration::from_secs(1),
-                        )
-                        .register_status_notifier_item(&name)
-                        .unwrap_or_default();
+            Some(msg) = client_rx.recv() => {
+                match msg {
+                    ClientRequest::Update(cb) => {
+                        cb(&mut service.tray);
+                        let _ = service.update().await;
+                    }
+                    ClientRequest::Shutdown => {
+                        break Ok(());
                     }
                 }
-                true
-            },
-        )?;
-
-        Ok(Processor { conn, state: inner })
-    }
-}
-
-/// A running TrayService, !Send + !Sync
-struct Processor<T> {
-    conn: LocalConnection,
-    state: Rc<InnerState<T>>,
-}
-
-impl<T: Tray + 'static> Processor<T> {
-    fn turn(&mut self, timeout: Option<Duration>) -> Result<(), error::Error> {
-        const PIECE: Duration = Duration::from_millis(50);
-        let now = Instant::now();
-        // Didn't find a better way to do the "select",
-        // just poll
-        loop {
-            use crate::CurrentTrayStatus::*;
-            match self.state.handle.tray_status.take() {
-                NeedUpdate => {
-                    dbus_ext::with_conn(&self.conn, || {
-                        self.state.update_properties();
-                        self.state.update_menu();
-                    });
+            }
+            Some(msg) = sni_rx.recv() => {
+                match msg {
+                    SniMessage::Activate(x, y) => {
+                        service.tray.activate(x, y);
+                        let _ = service.update().await;
+                    }
+                    SniMessage::SecondaryActivate(x, y) => {
+                        service.tray.secondary_activate(x, y);
+                        let _ = service.update().await;
+                    }
+                    SniMessage::Scroll(delta, dir) => {
+                        service.tray.scroll(delta, &dir);
+                        let _ = service.update().await;
+                    }
+                    SniMessage::GetDbusProperty(prop) => match prop {
+                        SniProperty::Category(r) => {
+                            let _ = r.send(Ok(service.tray.category().to_string()));
+                        }
+                        SniProperty::Id(r) => {
+                            let _ = r.send(Ok(service.tray.id()));
+                        }
+                        SniProperty::Title(r) => {
+                            let _ = r.send(Ok(service.tray.title()));
+                        }
+                        SniProperty::Status(r) => {
+                            let _ = r.send(Ok(service.tray.status().to_string()));
+                        }
+                        SniProperty::WindowId(r) => {
+                            let _ = r.send(Ok(service.tray.window_id()));
+                        }
+                        SniProperty::IconThemePath(r) => {
+                            let _ = r.send(Ok(service.tray.icon_theme_path()));
+                        }
+                        SniProperty::IconName(r) => {
+                            let _ = r.send(Ok(service.tray.icon_name()));
+                        }
+                        SniProperty::IconPixmap(r) => {
+                            let _ = r.send(Ok(service.tray.icon_pixmap()));
+                        }
+                        SniProperty::OverlayIconName(r) => {
+                            let _ = r.send(Ok(service.tray.overlay_icon_name()));
+                        }
+                        SniProperty::OverlayIconPixmap(r) => {
+                            let _ = r.send(Ok(service.tray.overlay_icon_pixmap()));
+                        }
+                        SniProperty::AttentionIconName(r) => {
+                            let _ = r.send(Ok(service.tray.attention_icon_name()));
+                        }
+                        SniProperty::AttentionIconPixmap(r) => {
+                            let _ = r.send(Ok(service.tray.attention_icon_pixmap()));
+                        }
+                        SniProperty::AttentionMovieName(r) => {
+                            let _ = r.send(Ok(service.tray.attention_movie_name()));
+                        }
+                        SniProperty::ToolTip(r) => {
+                            let _ = r.send(Ok(service.tray.tool_tip()));
+                        }
+                    }
                 }
-                Stop => {
-                    break Err(error::Error::Stopped);
+            }
+            Some(msg) = menu_rx.recv() => {
+                match msg {
+                    DbusMenuMessage::GetLayout(parent_id, recursion_depth, property_names, r) => {
+                        let tree = service.gen_dbusmenu_tree(
+                            parent_id,
+                            if recursion_depth < 0 {
+                                None
+                            } else {
+                                Some(recursion_depth as usize)
+                            },
+                            property_names,
+                        );
+                        let result = tree
+                            .map(|tree| (service.revision, tree))
+                            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("parentId not found".to_string()));
+                        let _ = r.send(result);
+                    }
+                    DbusMenuMessage::GetGroupProperties(ids, property_names, r) => {
+                        let result = ids
+                            .into_iter()
+                            .filter_map(|id| service.id2index(id).map(|idx| (id, idx)))
+                            .map(|(id, index)| {
+                                (
+                                    id,
+                                    service.menu_cache[index]
+                                        .0
+                                        .to_dbus_map(&property_names),
+                                )
+                            })
+                            .collect();
+                        let _ = r.send(Ok(result));
+                    }
+                    DbusMenuMessage::GetProperty(id, name, r) => {
+                        let result = service.id2index(id)
+                            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))
+                            .map(|index| service.menu_cache[index].0.to_dbus_map(&vec![name]))
+                            .map(|value| Value::from(value).to_owned());
+                        let _ = r.send(result);
+                    }
+                    DbusMenuMessage::Event(id, event_id, data, timestamp, r) => {
+                        let _ = r.send(service.event(id, &event_id, data, timestamp).await);
+                    }
+                    DbusMenuMessage::EventGroup(events, r) => {
+                        let _ = r.send(service.event_group(events).await);
+                    }
+                    DbusMenuMessage::GetDbusProperty(prop) => match prop {
+                        DbusMenuProperty::TextDirection(r) => {
+                            let _ = r.send(Ok(service.tray.text_direction().to_string()));
+                        }
+                        DbusMenuProperty::Status(r) => {
+                            let status = match service.tray.status() {
+                                tray::Status::Active | tray::Status::Passive => menu::Status::Normal,
+                                tray::Status::NeedsAttention => menu::Status::Notice,
+                            };
+                            let _ = r.send(Ok(status.to_string()));
+                        }
+                        DbusMenuProperty::IconThemePath(r) => {
+                            let path = service.tray.icon_theme_path();
+                            let path = if path.is_empty() { vec![] } else { vec![path] };
+                            let _ = r.send(Ok(path));
+                        }
+                    }
                 }
-                Idle => {}
-            }
-            let wait = timeout
-                .map(|timeout| std::cmp::min(PIECE, timeout - now.elapsed()))
-                .unwrap_or(PIECE);
-            self.conn.process(wait)?;
-            if wait < PIECE {
-                break Ok(());
             }
         }
     }
 }
 
-struct InnerState<T> {
-    handle: Handle<T>,
-    // A list of menu item and it's submenu
-    menu_cache: RefCell<Vec<(menu::RawMenuItem<T>, Vec<usize>)>>,
-    item_id_offset: Cell<i32>,
-    revision: Cell<u32>,
-    prop_cache: RefCell<PropertiesCache>,
+struct Service<T> {
+    conn: Connection,
+    tray: T,
+    menu_cache: Vec<(menu::RawMenuItem<T>, Vec<usize>)>,
+    prop_cache: PropertiesCache,
+    item_id_offset: i32,
+    revision: u32,
 }
 
-impl<T: Tray + 'static> InnerState<T> {
-    fn update_immediately<F: Fn(&mut T)>(&self, f: F) {
-        {
-            let mut model = self.handle.model.lock().unwrap();
-            (f)(&mut model);
-        }
-        self.update_properties();
-        self.update_menu();
-    }
+impl<T: Tray + Send + 'static> Service<T> {
+    async fn update_properties(&mut self) -> zbus::Result<()> {
+        let sni_obj  = self.conn.object_server().interface::<_, StatusNotifierItem>(SNI_PATH).await?;
+        let menu_obj = self.conn.object_server().interface::<_, DbusMenu>(MENU_PATH).await?;
 
-    // TODO: macro?
-    fn update_properties(&self) {
-        let sni_dbus_path: dbus::Path = SNI_PATH.into();
-        let inner = self.handle.model.lock().unwrap();
-        let mut prop_cache = self.prop_cache.borrow_mut();
-        let mut dbusmenu_changed: HashMap<String, Variant<Box<dyn RefArg>>> = HashMap::new();
-        let mut sni_changed: HashMap<String, Variant<Box<dyn RefArg>>> = HashMap::new();
-
-        let mut dbus_msgs = Vec::new();
-
-        if let Some(text_direction) = prop_cache.text_direction_changed(&*inner) {
-            dbusmenu_changed.insert(
-                "TextDirection".into(),
-                Variant(Box::new(text_direction.to_string())),
-            );
+        let text_direction = self.prop_cache.text_direction_changed(&self.tray);
+        if text_direction.is_some() {
+            menu_obj.get_mut().await.text_direction_changed(menu_obj.signal_context()).await?;
         }
 
-        if let Some(tray_status) = prop_cache.status_changed(&*inner) {
-            let msg = StatusNotifierItemNewStatus {
-                status: tray_status.to_string(),
-            }
-            .to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
-            let menu_status = match tray_status {
-                tray::Status::Passive | tray::Status::Active => menu::Status::Normal,
-                tray::Status::NeedsAttention => menu::Status::Notice,
-            };
-            dbusmenu_changed.insert("Status".into(), Variant(Box::new(menu_status.to_string())));
+        let tray_status = self.prop_cache.status_changed(&self.tray);
+        if let Some(tray_status) = tray_status {
+            StatusNotifierItem::new_status(sni_obj.signal_context(), &tray_status.to_string()).await?;
+            menu_obj.get_mut().await.status_changed(menu_obj.signal_context()).await?;
         }
 
-        if let Some(icon_theme_path) = prop_cache.icon_theme_path_changed(&*inner) {
-            dbusmenu_changed.insert(
-                "IconThemePath".into(),
-                Variant(Box::new(icon_theme_path.to_string())),
-            );
-            sni_changed.insert(
-                "IconThemePath".into(),
-                Variant(Box::new(vec![icon_theme_path.to_string()])),
-            );
+        let icon_theme_path = self.prop_cache.icon_theme_path_changed(&self.tray);
+        if icon_theme_path.is_some() {
+            sni_obj.get_mut().await.icon_theme_path_changed(sni_obj.signal_context()).await?;
+            menu_obj.get_mut().await.icon_theme_path_changed(menu_obj.signal_context()).await?;
         }
 
-        if !dbusmenu_changed.is_empty() {
-            let msg = PropertiesPropertiesChanged {
-                interface_name: "com.canonical.dbusmenu".to_owned(),
-                changed_properties: dbusmenu_changed,
-                invalidated_properties: Vec::new(),
-            }
-            .to_emit_message(&MENU_PATH.into());
-            dbus_msgs.push(msg);
+        let category = self.prop_cache.category_changed(&self.tray);
+        if category.is_some() {
+            sni_obj.get_mut().await.category_changed(sni_obj.signal_context()).await?;
         }
 
-        if let Some(category) = prop_cache.category_changed(&*inner) {
-            sni_changed.insert("Category".into(), Variant(Box::new(category.to_string())));
-        }
-
-        if let Some(window_id) = prop_cache.window_id_changed(&*inner) {
-            sni_changed.insert("WindowId".into(), Variant(Box::new(window_id.to_string())));
-        }
-
-        if !sni_changed.is_empty() {
-            let msg = PropertiesPropertiesChanged {
-                interface_name: "org.kde.StatusNotifierItem".to_owned(),
-                changed_properties: sni_changed,
-                invalidated_properties: Vec::new(),
-            }
-            .to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
+        let window_id = self.prop_cache.window_id_changed(&self.tray);
+        if window_id.is_some() {
+            sni_obj.get_mut().await.window_id_changed(sni_obj.signal_context()).await?;
         }
 
         // TODO: assert the id is consistent
 
-        if prop_cache.title_changed(&*inner) {
-            let msg = StatusNotifierItemNewTitle {}.to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
+        if self.prop_cache.title_changed(&self.tray) {
+            StatusNotifierItem::new_title(sni_obj.signal_context()).await?;
         }
-        if prop_cache.icon_changed(&*inner) {
-            let msg = StatusNotifierItemNewIcon {}.to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
+        if self.prop_cache.icon_changed(&self.tray) {
+            StatusNotifierItem::new_icon(sni_obj.signal_context()).await?;
         }
-        if prop_cache.overlay_icon_changed(&*inner) {
-            let msg = StatusNotifierItemNewOverlayIcon {}.to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
+        if self.prop_cache.overlay_icon_changed(&self.tray) {
+            StatusNotifierItem::new_overlay_icon(sni_obj.signal_context()).await?;
         }
-        if prop_cache.attention_icon_changed(&*inner) {
-            let msg = StatusNotifierItemNewAttentionIcon {}.to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
+        if self.prop_cache.attention_icon_changed(&self.tray) {
+            StatusNotifierItem::new_attention_icon(sni_obj.signal_context()).await?;
         }
-        if prop_cache.tool_tip_changed(&*inner) {
-            let msg = StatusNotifierItemNewToolTip {}.to_emit_message(&sni_dbus_path);
-            dbus_msgs.push(msg);
+        if self.prop_cache.tool_tip_changed(&self.tray) {
+            StatusNotifierItem::new_tool_tip(sni_obj.signal_context()).await?;
         }
-
-        dbus_ext::with_current(move |conn| {
-            for msg in dbus_msgs {
-                conn.send(msg).unwrap();
-            }
-        })
-        .unwrap();
+        Ok(())
     }
 
-    fn update_menu(&self) {
-        let new_menu = menu::menu_flatten(T::menu(&*self.handle.model.lock().unwrap()));
-        let mut old_menu = self.menu_cache.borrow_mut();
-
-        let mut props_updated = DbusmenuItemsPropertiesUpdated {
-            updated_props: Vec::new(),
-            removed_props: Vec::new(),
-        };
+    async fn update_menu(&mut self) -> zbus::Result<()> {
+        let new_menu = menu::menu_flatten(self.tray.menu());
+        let old_menu = &self.menu_cache;
+        let mut all_updated_props = Vec::new();
+        let mut all_removed_props = Vec::new();
         let default = crate::menu::RawMenuItem::default();
         let mut layout_updated = false;
         for (index, (old, new)) in old_menu
@@ -368,13 +322,11 @@ impl<T: Tray + 'static> InnerState<T> {
 
             if let Some((updated_props, removed_props)) = old_item.diff(new_item) {
                 if !updated_props.is_empty() {
-                    props_updated
-                        .updated_props
+                    all_updated_props
                         .push((self.index2id(index), updated_props));
                 }
                 if !removed_props.is_empty() {
-                    props_updated
-                        .removed_props
+                    all_removed_props
                         .push((self.index2id(index), removed_props));
                 }
             }
@@ -384,49 +336,35 @@ impl<T: Tray + 'static> InnerState<T> {
             }
         }
 
+        let menu_obj = self.conn.object_server().interface::<_, DbusMenu>(MENU_PATH).await?;
         if layout_updated {
             // The layout has been changed, bump ID offset to invalidate all items,
             // which is required to avoid unexpected behaviors on some system tray
-            self.revision.set(self.revision.get() + 1);
-            self.item_id_offset
-                .set(self.item_id_offset.get() + old_menu.len() as i32);
-            *old_menu = new_menu;
-
-            let msg = DbusmenuLayoutUpdated {
-                parent: 0,
-                revision: self.revision.get(),
-            }
-            .to_emit_message(&MENU_PATH.into());
-            dbus_ext::with_current(move |conn| {
-                conn.send(msg).unwrap();
-            })
-            .unwrap();
-        } else if !props_updated.updated_props.is_empty() || !props_updated.removed_props.is_empty()
-        {
-            *old_menu = new_menu;
-
-            let msg = props_updated.to_emit_message(&MENU_PATH.into());
-            dbus_ext::with_current(move |conn| {
-                conn.send(msg).unwrap();
-            })
-            .unwrap();
-        } else {
-            *old_menu = new_menu;
+            self.revision += 1;
+            self.item_id_offset += old_menu.len() as i32;
+            DbusMenu::layout_updated(menu_obj.signal_context(), self.revision, 0).await?;
+        } else if !all_updated_props.is_empty() || !all_removed_props.is_empty() {
+            DbusMenu::items_properties_updated(menu_obj.signal_context(), all_updated_props, all_removed_props).await?;
         }
+        self.menu_cache = new_menu;
+        Ok(())
+    }
+
+    async fn update(&mut self) -> zbus::Result<()> {
+        self.update_properties().await?;
+        self.update_menu().await
     }
 
     // Return None if item not exists
     fn id2index(&self, id: i32) -> Option<usize> {
-        let number_of_items = self.menu_cache.borrow().len();
-        let offset = self.item_id_offset.get();
+        let number_of_items = self.menu_cache.len();
+        let offset = self.item_id_offset;
         if id == 0 && number_of_items > 0 {
             // ID of the root item is always 0
             return Some(0);
-        } else if id == offset {
-            // illegal id, bug in index2id or dbus peer
-            return None;
         } else if id <= offset {
-            // expired id
+            // == illegal id, bug in index2id or dbus peer
+            //  < expired id
             return None;
         }
         let index: usize = (id - offset).try_into().expect("unreachable!");
@@ -444,7 +382,7 @@ impl<T: Tray + 'static> InnerState<T> {
         } else {
             <i32 as TryFrom<_>>::try_from(index)
                 .expect("index overflow")
-                .checked_add(self.item_id_offset.get())
+                .checked_add(self.item_id_offset)
                 .expect("id overflow")
         }
     }
@@ -454,25 +392,20 @@ impl<T: Tray + 'static> InnerState<T> {
         &self,
         parent_id: i32,
         recursion_depth: Option<usize>,
-        property_names: Vec<&str>,
-    ) -> Option<(
-        i32,
-        HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
-        Vec<Variant<Box<dyn RefArg + 'static>>>,
-    )> {
+        property_names: Vec<String>,
+    ) -> Option<LayoutItem> {
         let parent_index = self.id2index(parent_id)?;
 
         // The type is Vec<Option<id, properties, Vec<submenu>, Vec<submenu_index>>>
         let mut x: Vec<
             Option<(
                 i32,
-                HashMap<String, Variant<Box<dyn RefArg>>>,
-                Vec<Variant<Box<dyn RefArg>>>,
+                HashMap<String, OwnedValue>,
+                Vec<OwnedValue>,
                 Vec<usize>,
             )>,
         > = self
             .menu_cache
-            .borrow()
             .iter()
             .enumerate()
             .map(|(index, (item, submenu))| {
@@ -494,7 +427,7 @@ impl<T: Tray + 'static> InnerState<T> {
                 if !c.2.is_empty() {
                     c.1.insert(
                         "children-display".into(),
-                        Variant(Box::new("submenu".to_owned())),
+                        Str::from_static("submenu").into(),
                     );
                 }
                 if let Some(parent) = stack.pop() {
@@ -505,285 +438,56 @@ impl<T: Tray + 'static> InnerState<T> {
                         .as_mut()
                         .unwrap()
                         .2
-                        .push(Variant(Box::new((item.0, item.1, item.2))));
+                        .push(LayoutItem {
+                            id: item.0,
+                            properties: item.1,
+                            children: item.2
+                        }.into());
                 }
             } else {
                 stack.push(current);
                 let sub = submenu_indexes.remove(0);
-                if recursion_depth.is_none() || recursion_depth.unwrap() + 1 >= stack.len() {
+                if recursion_depth.map_or(true, |depth| depth + 1 >= stack.len()) {
                     stack.push(sub);
                 }
             }
         }
-
-        let resp = x.remove(parent_index).unwrap();
-        Some((resp.0, resp.1, resp.2))
-    }
-}
-
-impl<T: Tray> fmt::Debug for InnerState<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        f.debug_struct(&format!("StatusNotifierItem")).finish()
-    }
-}
-
-impl<T: Tray + 'static> dbus_interface::StatusNotifierItem for InnerState<T> {
-    fn activate(&self, x: i32, y: i32) -> Result<(), dbus::MethodErr> {
-        self.update_immediately(|model| {
-            Tray::activate(model, x, y);
-        });
-        Ok(())
+        let resp = x.remove(parent_index)?;
+        Some(LayoutItem {
+            id: resp.0,
+            properties: resp.1,
+            children: resp.2,
+        })
     }
 
-    fn secondary_activate(&self, x: i32, y: i32) -> Result<(), dbus::MethodErr> {
-        self.update_immediately(|model| {
-            Tray::secondary_activate(&mut *model, x, y);
-        });
-        Ok(())
-    }
-
-    fn scroll(&self, delta: i32, dir: &str) -> Result<(), dbus::MethodErr> {
-        self.update_immediately(|model| {
-            Tray::scroll(&mut *model, delta, dir);
-        });
-        Ok(())
-    }
-
-    fn context_menu(&self, _x: i32, _y: i32) -> Result<(), dbus::MethodErr> {
-        Ok(())
-    }
-
-    fn item_is_menu(&self) -> Result<bool, dbus::MethodErr> {
-        Ok(false)
-    }
-
-    fn category(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::category(&*model).to_string())
-    }
-
-    fn id(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::id(&*model))
-    }
-
-    fn title(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::title(&*model))
-    }
-
-    fn status(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::status(&*model).to_string())
-    }
-
-    fn window_id(&self) -> Result<i32, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::window_id(&*model))
-    }
-
-    fn menu(&self) -> Result<dbus::Path<'static>, dbus::MethodErr> {
-        Ok(MENU_PATH.into())
-    }
-
-    fn icon_name(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::icon_name(&*model))
-    }
-
-    fn icon_theme_path(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::icon_theme_path(&*model))
-    }
-
-    fn icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::icon_pixmap(&*model)
-            .into_iter()
-            .map(Into::into)
-            .collect())
-    }
-
-    fn overlay_icon_name(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::overlay_icon_name(&*model))
-    }
-
-    fn overlay_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::overlay_icon_pixmap(&*model)
-            .into_iter()
-            .map(Into::into)
-            .collect())
-    }
-
-    fn attention_icon_name(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::attention_icon_name(&*model))
-    }
-
-    fn attention_icon_pixmap(&self) -> Result<Vec<(i32, i32, Vec<u8>)>, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::attention_icon_pixmap(&*model)
-            .into_iter()
-            .map(Into::into)
-            .collect())
-    }
-
-    fn attention_movie_name(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::attention_movie_name(&*model))
-    }
-
-    fn tool_tip(
-        &self,
-    ) -> Result<(String, Vec<(i32, i32, Vec<u8>)>, String, String), dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::tool_tip(&*model).into())
-    }
-}
-
-impl<T: Tray + 'static> dbus_interface::Dbusmenu for InnerState<T> {
-    fn get_layout(
-        &self,
-        parent_id: i32,
-        recursion_depth: i32,
-        property_names: Vec<&str>,
-    ) -> Result<
-        (
-            u32,
-            (
-                i32,
-                HashMap<String, Variant<Box<dyn RefArg + 'static>>>,
-                Vec<Variant<Box<dyn RefArg + 'static>>>,
-            ),
-        ),
-        dbus::MethodErr,
-    > {
-        if let Some(menu_tree) = self.gen_dbusmenu_tree(
-            parent_id,
-            if recursion_depth < 0 {
-                None
-            } else {
-                Some(recursion_depth as usize)
-            },
-            property_names,
-        ) {
-            Ok((self.revision.get(), menu_tree))
-        } else {
-            Err(dbus::Error::new_failed("parentId not found").into())
-        }
-    }
-
-    fn get_group_properties(
-        &self,
-        ids: Vec<i32>,
-        property_names: Vec<&str>,
-    ) -> Result<Vec<(i32, HashMap<String, Variant<Box<dyn RefArg + 'static>>>)>, dbus::MethodErr>
-    {
-        let r = ids
-            .into_iter()
-            .filter_map(|id| self.id2index(id).map(|index| (id, index)))
-            .map(|(id, index)| {
-                (
-                    id,
-                    self.menu_cache.borrow()[index]
-                        .0
-                        .to_dbus_map(&property_names),
-                )
-            })
-            .collect();
-        Ok(r)
-    }
-
-    fn get_property(
-        &self,
-        id: i32,
-        name: &str,
-    ) -> Result<Variant<Box<dyn RefArg + 'static>>, dbus::MethodErr> {
-        let index = self
-            .id2index(id)
-            .ok_or_else(|| dbus::Error::new_failed("id not found"))?;
-        let mut props = self.menu_cache.borrow()[index].0.to_dbus_map(&[name]);
-        Ok(props.remove(name).unwrap())
-    }
-
-    fn event(
-        &self,
-        id: i32,
-        event_id: &str,
-        _data: Variant<Box<dyn RefArg>>,
-        _timestamp: u32,
-    ) -> Result<(), dbus::MethodErr> {
+    async fn event(&mut self, id: i32, event_id: &str, _data: OwnedValue, _timestamp: u32) -> zbus::fdo::Result<()> {
         match event_id {
             "clicked" => {
                 assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
-                let index = self
-                    .id2index(id)
-                    .ok_or_else(|| dbus::Error::new_failed("id not found"))?;
-                let activate = self.menu_cache.borrow()[index].0.on_clicked.clone();
-                self.update_immediately(|model| {
-                    (activate)(model, index);
-                });
+                let index = self.id2index(id)
+                    .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))?;
+                if let Ok(activate) = self.menu_cache[index].0.on_clicked.clone().lock() {
+                    (activate)(&mut self.tray, index);
+                }
+                self.update().await?;
             }
             _ => (),
         }
         Ok(())
     }
 
-    fn event_group(
-        &self,
-        events: Vec<(i32, &str, Variant<Box<dyn RefArg>>, u32)>,
-    ) -> Result<Vec<i32>, dbus::MethodErr> {
+    async fn event_group(&mut self, events: Vec<(i32, String, OwnedValue, u32)>) -> zbus::fdo::Result<Vec<i32>> {
         let (found, not_found) = events
             .into_iter()
             .partition::<Vec<_>, _>(|event| self.id2index(event.0).is_some());
         if found.is_empty() {
-            return Err(
-                dbus::Error::new_failed("None of the id in the events can be found").into(),
-            );
-        }
-        for (id, event_id, data, timestamp) in found {
-            self.event(id, event_id, data, timestamp)?;
-        }
-        Ok(not_found.into_iter().map(|event| event.0).collect())
-    }
-
-    fn about_to_show(&self, _id: i32) -> Result<bool, dbus::MethodErr> {
-        Ok(false)
-    }
-
-    fn about_to_show_group(&self, _ids: Vec<i32>) -> Result<(Vec<i32>, Vec<i32>), dbus::MethodErr> {
-        // FIXME: the DBus message should set the no reply flag
-        Ok(Default::default())
-    }
-
-    fn version(&self) -> Result<u32, dbus::MethodErr> {
-        Ok(3)
-    }
-
-    fn text_direction(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(Tray::text_direction(&*model).to_string())
-    }
-
-    fn status(&self) -> Result<String, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        Ok(match Tray::status(&*model) {
-            tray::Status::Active | tray::Status::Passive => menu::Status::Normal,
-            tray::Status::NeedsAttention => menu::Status::Notice,
-        }
-        .to_string())
-    }
-
-    fn icon_theme_path(&self) -> Result<Vec<String>, dbus::MethodErr> {
-        let model = self.handle.model.lock().unwrap();
-        let path = Tray::icon_theme_path(&*model);
-        Ok(if path.is_empty() {
-            Default::default()
+            return Err(zbus::fdo::Error::InvalidArgs("None of the id in the events can be found".to_string()));
         } else {
-            vec![path]
-        })
+            for (id, event_id, data, timestamp) in found {
+                self.event(id, &event_id, data, timestamp).await?;
+            }
+            Ok(not_found.into_iter().map(|event| event.0).collect())
+        }
     }
 }
 
@@ -921,32 +625,4 @@ fn hash_of<T: Hash>(v: T) -> u64 {
     let mut hasher = DefaultHasher::new();
     v.hash(&mut hasher);
     hasher.finish()
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::*;
-
-    /// gen_dbusmenu_tree should not return an empty tree when menu_cache is empty,
-    /// which was the old behavior before 421a8d9e5ac46f58ce13543df94ce3c9d85c7be2
-    #[test]
-    fn gen_dbusmenu_tree_empty() {
-        impl Tray for () {}
-        let handle = Handle {
-            tray_status: TrayStatus::default(),
-            model: Arc::new(Mutex::new(())),
-        };
-        let state = InnerState {
-            handle,
-            menu_cache: RefCell::new(Vec::new()),
-            item_id_offset: Cell::new(0),
-            revision: Cell::new(0),
-            prop_cache: RefCell::new(PropertiesCache::new(&())),
-        };
-        let r = state.gen_dbusmenu_tree(0, None, Vec::new());
-        assert!(r.is_none());
-        let r = state.gen_dbusmenu_tree(1, None, Vec::new());
-        assert!(r.is_none());
-    }
 }

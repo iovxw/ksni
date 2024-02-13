@@ -1,4 +1,6 @@
 use std::fmt;
+use zbus::zvariant::{Type, Value};
+use serde::{Serialize, Deserialize};
 
 /// Category of this item.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -65,7 +67,7 @@ impl fmt::Display for Status {
 ///
 /// That can be visualized for instance by a tooltip (or by any other mean the
 /// visualization consider appropriate.
-#[derive(Clone, Debug, Default, Hash)]
+#[derive(Clone, Debug, Default, Hash, Type, Value, Serialize, Deserialize)]
 pub struct ToolTip {
     /// Freedesktop-compliant name for an icon.
     pub icon_name: String,
@@ -90,7 +92,7 @@ impl From<ToolTip> for (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
 }
 
 /// An ARGB32 image
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Type, Value, Serialize, Deserialize)]
 pub struct Icon {
     pub width: i32,
     pub height: i32,

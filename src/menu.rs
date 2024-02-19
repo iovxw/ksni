@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use zbus::zvariant::{Value, OwnedValue};
+use zbus::zvariant::{OwnedValue, Value};
 
 // pub struct Properties {
 //     /// Tells if the menus are in a normal state or they believe that they
@@ -428,12 +428,8 @@ impl<T> fmt::Debug for RawMenuItem<T> {
 }
 
 impl<T> RawMenuItem<T> {
-    pub(crate) fn to_dbus_map(
-        &self,
-        filter: &Vec<String>,
-    ) -> HashMap<String, OwnedValue> {
-        let mut properties: HashMap<String, OwnedValue> =
-            HashMap::with_capacity(11);
+    pub(crate) fn to_dbus_map(&self, filter: &Vec<String>) -> HashMap<String, OwnedValue> {
+        let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(11);
 
         let default: RawMenuItem<T> = RawMenuItem::default();
         if_not_default_then_insert!(
@@ -479,10 +475,7 @@ impl<T> RawMenuItem<T> {
         properties
     }
 
-    pub(crate) fn diff(
-        &self,
-        other: &Self,
-    ) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
+    pub(crate) fn diff(&self, other: &Self) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
         let default = Self::default();
         let mut updated_props: HashMap<String, OwnedValue> = HashMap::new();
         let mut removed_props = Vec::new();
@@ -518,21 +511,30 @@ impl<T> RawMenuItem<T> {
             if other.icon_name == default.icon_name {
                 removed_props.push("icon-name".into());
             } else {
-                updated_props.insert("icon-name".into(), Value::from(other.icon_name.clone()).into());
+                updated_props.insert(
+                    "icon-name".into(),
+                    Value::from(other.icon_name.clone()).into(),
+                );
             }
         }
         if self.icon_data != other.icon_data {
             if other.icon_data == default.icon_data {
                 removed_props.push("icon-data".into());
             } else {
-                updated_props.insert("icon-data".into(), Value::from(other.icon_data.clone()).into());
+                updated_props.insert(
+                    "icon-data".into(),
+                    Value::from(other.icon_data.clone()).into(),
+                );
             }
         }
         if self.shortcut != other.shortcut {
             if other.shortcut == default.shortcut {
                 removed_props.push("shortcut".into());
             } else {
-                updated_props.insert("shortcut".into(), Value::from(other.shortcut.clone()).into());
+                updated_props.insert(
+                    "shortcut".into(),
+                    Value::from(other.shortcut.clone()).into(),
+                );
             }
         }
         if self.toggle_type != other.toggle_type {

@@ -4,21 +4,18 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::stream::StreamExt;
-use zbus::Connection;
 use zbus::fdo::DBusProxy;
-use zbus::zvariant::{Value, OwnedValue, Str};
+use zbus::zvariant::{OwnedValue, Str, Value};
+use zbus::Connection;
 
 use crate::dbus_interface::{
-    SNI_PATH, MENU_PATH,
-    StatusNotifierWatcherProxy,
-    StatusNotifierItem, SniMessage, SniProperty,
-    DbusMenu, DbusMenuMessage, DbusMenuProperty,
-    LayoutItem,
+    DbusMenu, DbusMenuMessage, DbusMenuProperty, LayoutItem, SniMessage, SniProperty,
+    StatusNotifierItem, StatusNotifierWatcherProxy, MENU_PATH, SNI_PATH,
 };
 
 use crate::menu;
 use crate::tray;
-use crate::{Handle, Tray, ClientRequest};
+use crate::{ClientRequest, Handle, Tray};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
@@ -32,14 +29,19 @@ pub fn spawn<T: Tray + Send + 'static>(tray: T) -> zbus::Result<Handle<T>> {
                 .enable_all()
                 .build()
                 .expect("tokio::new_current_thread()");
-            rt.block_on(async move { let _ = run_async(tray, client_rx).await; });
+            rt.block_on(async move {
+                let _ = run_async(tray, client_rx).await;
+            });
         })
         .map_err(|e| zbus::Error::Failure(e.to_string()))?;
 
     Ok(Handle { sender: client_tx })
 }
 
-pub async fn run_async<T: Tray + Send + 'static>(tray: T, mut client_rx: tokio::sync::mpsc::UnboundedReceiver<ClientRequest<T>>) -> zbus::Result<()> {
+pub async fn run_async<T: Tray + Send + 'static>(
+    tray: T,
+    mut client_rx: tokio::sync::mpsc::UnboundedReceiver<ClientRequest<T>>,
+) -> zbus::Result<()> {
     let conn = Connection::session().await.unwrap();
     let name = format!(
         "org.kde.StatusNotifierItem-{}-{}",
@@ -50,12 +52,8 @@ pub async fn run_async<T: Tray + Send + 'static>(tray: T, mut client_rx: tokio::
     let (sni_obj, mut sni_rx) = StatusNotifierItem::new();
     let (menu_obj, mut menu_rx) = DbusMenu::new();
 
-    conn.object_server()
-        .at(SNI_PATH, sni_obj)
-        .await?;
-    conn.object_server()
-        .at(MENU_PATH, menu_obj)
-        .await?;
+    conn.object_server().at(SNI_PATH, sni_obj).await?;
+    conn.object_server().at(MENU_PATH, menu_obj).await?;
     conn.request_name(name.as_str()).await?;
 
     let snw_object = StatusNotifierWatcherProxy::new(&conn).await?;
@@ -254,34 +252,67 @@ struct Service<T> {
 
 impl<T: Tray + Send + 'static> Service<T> {
     async fn update_properties(&mut self) -> zbus::Result<()> {
-        let sni_obj  = self.conn.object_server().interface::<_, StatusNotifierItem>(SNI_PATH).await?;
-        let menu_obj = self.conn.object_server().interface::<_, DbusMenu>(MENU_PATH).await?;
+        let sni_obj = self
+            .conn
+            .object_server()
+            .interface::<_, StatusNotifierItem>(SNI_PATH)
+            .await?;
+        let menu_obj = self
+            .conn
+            .object_server()
+            .interface::<_, DbusMenu>(MENU_PATH)
+            .await?;
 
         let text_direction = self.prop_cache.text_direction_changed(&self.tray);
         if text_direction.is_some() {
-            menu_obj.get_mut().await.text_direction_changed(menu_obj.signal_context()).await?;
+            menu_obj
+                .get_mut()
+                .await
+                .text_direction_changed(menu_obj.signal_context())
+                .await?;
         }
 
         let tray_status = self.prop_cache.status_changed(&self.tray);
         if let Some(tray_status) = tray_status {
-            StatusNotifierItem::new_status(sni_obj.signal_context(), &tray_status.to_string()).await?;
-            menu_obj.get_mut().await.status_changed(menu_obj.signal_context()).await?;
+            StatusNotifierItem::new_status(sni_obj.signal_context(), &tray_status.to_string())
+                .await?;
+            menu_obj
+                .get_mut()
+                .await
+                .status_changed(menu_obj.signal_context())
+                .await?;
         }
 
         let icon_theme_path = self.prop_cache.icon_theme_path_changed(&self.tray);
         if icon_theme_path.is_some() {
-            sni_obj.get_mut().await.icon_theme_path_changed(sni_obj.signal_context()).await?;
-            menu_obj.get_mut().await.icon_theme_path_changed(menu_obj.signal_context()).await?;
+            sni_obj
+                .get_mut()
+                .await
+                .icon_theme_path_changed(sni_obj.signal_context())
+                .await?;
+            menu_obj
+                .get_mut()
+                .await
+                .icon_theme_path_changed(menu_obj.signal_context())
+                .await?;
         }
 
         let category = self.prop_cache.category_changed(&self.tray);
         if category.is_some() {
-            sni_obj.get_mut().await.category_changed(sni_obj.signal_context()).await?;
+            sni_obj
+                .get_mut()
+                .await
+                .category_changed(sni_obj.signal_context())
+                .await?;
         }
 
         let window_id = self.prop_cache.window_id_changed(&self.tray);
         if window_id.is_some() {
-            sni_obj.get_mut().await.window_id_changed(sni_obj.signal_context()).await?;
+            sni_obj
+                .get_mut()
+                .await
+                .window_id_changed(sni_obj.signal_context())
+                .await?;
         }
 
         // TODO: assert the id is consistent
@@ -322,12 +353,10 @@ impl<T: Tray + Send + 'static> Service<T> {
 
             if let Some((updated_props, removed_props)) = old_item.diff(new_item) {
                 if !updated_props.is_empty() {
-                    all_updated_props
-                        .push((self.index2id(index), updated_props));
+                    all_updated_props.push((self.index2id(index), updated_props));
                 }
                 if !removed_props.is_empty() {
-                    all_removed_props
-                        .push((self.index2id(index), removed_props));
+                    all_removed_props.push((self.index2id(index), removed_props));
                 }
             }
             if old_childs != new_childs {
@@ -336,7 +365,11 @@ impl<T: Tray + Send + 'static> Service<T> {
             }
         }
 
-        let menu_obj = self.conn.object_server().interface::<_, DbusMenu>(MENU_PATH).await?;
+        let menu_obj = self
+            .conn
+            .object_server()
+            .interface::<_, DbusMenu>(MENU_PATH)
+            .await?;
         if layout_updated {
             // The layout has been changed, bump ID offset to invalidate all items,
             // which is required to avoid unexpected behaviors on some system tray
@@ -344,7 +377,12 @@ impl<T: Tray + Send + 'static> Service<T> {
             self.item_id_offset += old_menu.len() as i32;
             DbusMenu::layout_updated(menu_obj.signal_context(), self.revision, 0).await?;
         } else if !all_updated_props.is_empty() || !all_removed_props.is_empty() {
-            DbusMenu::items_properties_updated(menu_obj.signal_context(), all_updated_props, all_removed_props).await?;
+            DbusMenu::items_properties_updated(
+                menu_obj.signal_context(),
+                all_updated_props,
+                all_removed_props,
+            )
+            .await?;
         }
         self.menu_cache = new_menu;
         Ok(())
@@ -434,15 +472,14 @@ impl<T: Tray + Send + 'static> Service<T> {
                     x.push(None);
                     let item = x.swap_remove(current).unwrap();
                     stack.push(parent);
-                    x[parent]
-                        .as_mut()
-                        .unwrap()
-                        .2
-                        .push(LayoutItem {
+                    x[parent].as_mut().unwrap().2.push(
+                        LayoutItem {
                             id: item.0,
                             properties: item.1,
-                            children: item.2
-                        }.into());
+                            children: item.2,
+                        }
+                        .into(),
+                    );
                 }
             } else {
                 stack.push(current);
@@ -460,11 +497,18 @@ impl<T: Tray + Send + 'static> Service<T> {
         })
     }
 
-    async fn event(&mut self, id: i32, event_id: &str, _data: OwnedValue, _timestamp: u32) -> zbus::fdo::Result<()> {
+    async fn event(
+        &mut self,
+        id: i32,
+        event_id: &str,
+        _data: OwnedValue,
+        _timestamp: u32,
+    ) -> zbus::fdo::Result<()> {
         match event_id {
             "clicked" => {
                 assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
-                let index = self.id2index(id)
+                let index = self
+                    .id2index(id)
                     .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))?;
                 (self.menu_cache[index].0.on_clicked)(&mut self.tray, index);
                 self.update().await?;
@@ -474,12 +518,17 @@ impl<T: Tray + Send + 'static> Service<T> {
         Ok(())
     }
 
-    async fn event_group(&mut self, events: Vec<(i32, String, OwnedValue, u32)>) -> zbus::fdo::Result<Vec<i32>> {
+    async fn event_group(
+        &mut self,
+        events: Vec<(i32, String, OwnedValue, u32)>,
+    ) -> zbus::fdo::Result<Vec<i32>> {
         let (found, not_found) = events
             .into_iter()
             .partition::<Vec<_>, _>(|event| self.id2index(event.0).is_some());
         if found.is_empty() {
-            return Err(zbus::fdo::Error::InvalidArgs("None of the id in the events can be found".to_string()));
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "None of the id in the events can be found".to_string(),
+            ));
         } else {
             for (id, event_id, data, timestamp) in found {
                 self.event(id, &event_id, data, timestamp).await?;

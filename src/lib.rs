@@ -2,15 +2,15 @@
 //!
 //! See the [README.md](https://github.com/iovxw/ksni) for an example
 
-pub mod menu;
 mod dbus_interface;
+pub mod menu;
 mod service;
 mod tray;
 
 #[doc(inline)]
 pub use menu::{MenuItem, TextDirection};
+pub use service::{run_async, spawn};
 pub use tray::{Category, Icon, Status, ToolTip};
-pub use service::{spawn, run_async};
 
 /// A system tray, implement this to create your tray
 ///
@@ -185,11 +185,15 @@ pub struct Handle<T> {
 
 impl<T> Handle<T> {
     /// Update the tray
-    pub fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(&self, f: F) -> Result<R, ClientError<T>> {
+    pub fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(
+        &self,
+        f: F,
+    ) -> Result<R, ClientError<T>> {
         let (tx, rx) = std::sync::mpsc::channel();
-        self.sender.send(ClientRequest::Update(Box::new(move |t: &mut T| {
-            let _ = tx.send((f)(t));
-        })))?;
+        self.sender
+            .send(ClientRequest::Update(Box::new(move |t: &mut T| {
+                let _ = tx.send((f)(t));
+            })))?;
         Ok(rx.recv()?)
     }
 

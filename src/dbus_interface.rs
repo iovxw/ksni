@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use zbus::{dbus_interface, dbus_proxy, SignalContext};
-use zbus::zvariant::{Type, Value, OwnedValue, ObjectPath};
 use tokio::sync::oneshot;
+use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
+use zbus::{dbus_interface, dbus_proxy, SignalContext};
 
-use crate::{ToolTip, Icon};
+use crate::{Icon, ToolTip};
 
 pub const SNI_PATH: &str = "/StatusNotifierItem";
 pub const MENU_PATH: &str = "/MenuBar";
@@ -83,14 +83,20 @@ impl StatusNotifierItem {
     }
 
     fn send(&self, message: SniMessage) -> zbus::fdo::Result<()> {
-        self.sender.send(message)
+        self.sender
+            .send(message)
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         Ok(())
     }
 
-    async fn get<T>(&self, property: SniProperty, rx: oneshot::Receiver<zbus::fdo::Result<T>>) -> zbus::fdo::Result<T> {
+    async fn get<T>(
+        &self,
+        property: SniProperty,
+        rx: oneshot::Receiver<zbus::fdo::Result<T>>,
+    ) -> zbus::fdo::Result<T> {
         self.send(SniMessage::GetDbusProperty(property))?;
-        rx.await.unwrap_or_else(|e| Err(zbus::fdo::Error::Failed(e.to_string())))
+        rx.await
+            .unwrap_or_else(|e| Err(zbus::fdo::Error::Failed(e.to_string())))
     }
 }
 
@@ -238,7 +244,11 @@ pub struct LayoutItem {
 #[derive(Debug)]
 pub enum DbusMenuMessage {
     GetLayout(i32, i32, Vec<String>, ReplySender<(u32, LayoutItem)>),
-    GetGroupProperties(Vec<i32>, Vec<String>, ReplySender<Vec<(i32, HashMap<String, OwnedValue>)>>),
+    GetGroupProperties(
+        Vec<i32>,
+        Vec<String>,
+        ReplySender<Vec<(i32, HashMap<String, OwnedValue>)>>,
+    ),
     GetProperty(i32, String, ReplySender<OwnedValue>),
     Event(i32, String, OwnedValue, u32, ReplySender<()>),
     EventGroup(Vec<(i32, String, OwnedValue, u32)>, ReplySender<Vec<i32>>),
@@ -263,47 +273,90 @@ impl DbusMenu {
     }
 
     fn send(&self, message: DbusMenuMessage) -> zbus::fdo::Result<()> {
-        self.sender.send(message)
+        self.sender
+            .send(message)
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
         Ok(())
     }
 
-    async fn send_recv<T>(&self, message: DbusMenuMessage, rx: oneshot::Receiver<zbus::fdo::Result<T>>) -> zbus::fdo::Result<T> {
+    async fn send_recv<T>(
+        &self,
+        message: DbusMenuMessage,
+        rx: oneshot::Receiver<zbus::fdo::Result<T>>,
+    ) -> zbus::fdo::Result<T> {
         self.send(message)?;
-        rx.await.unwrap_or_else(|e| Err(zbus::fdo::Error::Failed(e.to_string())))
+        rx.await
+            .unwrap_or_else(|e| Err(zbus::fdo::Error::Failed(e.to_string())))
     }
 
-    async fn get<T>(&self, property: DbusMenuProperty, rx: oneshot::Receiver<zbus::fdo::Result<T>>) -> zbus::fdo::Result<T> {
-        self.send_recv(DbusMenuMessage::GetDbusProperty(property), rx).await
+    async fn get<T>(
+        &self,
+        property: DbusMenuProperty,
+        rx: oneshot::Receiver<zbus::fdo::Result<T>>,
+    ) -> zbus::fdo::Result<T> {
+        self.send_recv(DbusMenuMessage::GetDbusProperty(property), rx)
+            .await
     }
 }
 
 #[dbus_interface(name = "com.canonical.dbusmenu")]
 impl DbusMenu {
     // methods
-    async fn get_layout(&self, parent_id: i32, recursion_depth: i32, property_names: Vec<String>) -> zbus::fdo::Result<(u32, LayoutItem)> {
+    async fn get_layout(
+        &self,
+        parent_id: i32,
+        recursion_depth: i32,
+        property_names: Vec<String>,
+    ) -> zbus::fdo::Result<(u32, LayoutItem)> {
         let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::GetLayout(parent_id, recursion_depth, property_names, tx), rx).await
+        self.send_recv(
+            DbusMenuMessage::GetLayout(parent_id, recursion_depth, property_names, tx),
+            rx,
+        )
+        .await
     }
 
-    async fn get_group_properties(&self, ids: Vec<i32>, property_names: Vec<String>) -> zbus::fdo::Result<Vec<(i32, HashMap<String, OwnedValue>)>> {
+    async fn get_group_properties(
+        &self,
+        ids: Vec<i32>,
+        property_names: Vec<String>,
+    ) -> zbus::fdo::Result<Vec<(i32, HashMap<String, OwnedValue>)>> {
         let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::GetGroupProperties(ids, property_names, tx), rx).await
+        self.send_recv(
+            DbusMenuMessage::GetGroupProperties(ids, property_names, tx),
+            rx,
+        )
+        .await
     }
 
     async fn get_property(&self, id: i32, name: String) -> zbus::fdo::Result<OwnedValue> {
         let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::GetProperty(id, name, tx), rx).await
+        self.send_recv(DbusMenuMessage::GetProperty(id, name, tx), rx)
+            .await
     }
 
-    async fn event(&self, id: i32, event_id: String, data: OwnedValue, timestamp: u32) -> zbus::fdo::Result<()> {
+    async fn event(
+        &self,
+        id: i32,
+        event_id: String,
+        data: OwnedValue,
+        timestamp: u32,
+    ) -> zbus::fdo::Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::Event(id, event_id, data, timestamp, tx), rx).await
+        self.send_recv(
+            DbusMenuMessage::Event(id, event_id, data, timestamp, tx),
+            rx,
+        )
+        .await
     }
 
-    async fn event_group(&self, events: Vec<(i32, String, OwnedValue, u32)>) -> zbus::fdo::Result<Vec<i32>> {
+    async fn event_group(
+        &self,
+        events: Vec<(i32, String, OwnedValue, u32)>,
+    ) -> zbus::fdo::Result<Vec<i32>> {
         let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::EventGroup(events, tx), rx).await
+        self.send_recv(DbusMenuMessage::EventGroup(events, tx), rx)
+            .await
     }
 
     async fn about_to_show(&self) -> zbus::fdo::Result<bool> {
@@ -344,9 +397,13 @@ impl DbusMenu {
     pub async fn items_properties_updated(
         ctxt: &SignalContext<'_>,
         updated_props: Vec<(i32, HashMap<String, OwnedValue>)>,
-        removed_props: Vec<(i32, Vec<String>)>
+        removed_props: Vec<(i32, Vec<String>)>,
     ) -> zbus::Result<()>;
 
     #[dbus_interface(signal)]
-    pub async fn layout_updated(ctxt: &SignalContext<'_>, revision: u32, parent: i32) -> zbus::Result<()>;
+    pub async fn layout_updated(
+        ctxt: &SignalContext<'_>,
+        revision: u32,
+        parent: i32,
+    ) -> zbus::Result<()>;
 }

@@ -94,7 +94,8 @@ fn main() {
     let handle = ksni::spawn(MyTray {
         selected_option: 0,
         checked: false,
-    }).unwrap();
+    })
+    .unwrap();
 
     std::thread::sleep(std::time::Duration::from_secs(5));
     // We can modify the handle

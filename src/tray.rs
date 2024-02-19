@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use zbus::zvariant::{Type, Value};
-use serde::{Serialize, Deserialize};
 
 /// Category of this item.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

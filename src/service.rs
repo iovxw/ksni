@@ -466,9 +466,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
                 let index = self.id2index(id)
                     .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))?;
-                if let Ok(activate) = self.menu_cache[index].0.on_clicked.clone().lock() {
-                    (activate)(&mut self.tray, index);
-                }
+                (self.menu_cache[index].0.on_clicked)(&mut self.tray, index);
                 self.update().await?;
             }
             _ => (),

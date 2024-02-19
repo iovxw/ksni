@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use zbus::zvariant::{Value, OwnedValue};
 
@@ -130,9 +130,9 @@ impl<T: 'static> From<StandardItem<T>> for RawMenuItem<T> {
             icon_data: item.icon_data,
             shortcut: item.shortcut,
             disposition: item.disposition,
-            on_clicked: Arc::new(Mutex::new(move |this: &mut T, _id| {
+            on_clicked: Box::new(move |this: &mut T, _id| {
                 (activate)(this);
-            })),
+            }),
             ..Default::default()
         }
     }
@@ -203,7 +203,7 @@ impl<T> From<SubMenu<T>> for RawMenuItem<T> {
             icon_data: item.icon_data,
             shortcut: item.shortcut,
             disposition: item.disposition,
-            on_clicked: Arc::new(Mutex::new(move |_this: &mut T, _id| Default::default())),
+            on_clicked: Box::new(move |_this: &mut T, _id| Default::default()),
             ..Default::default()
         }
     }
@@ -283,9 +283,9 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
                 ToggleState::Off
             },
             disposition: item.disposition,
-            on_clicked: Arc::new(Mutex::new(move |this: &mut T, _id| {
+            on_clicked: Box::new(move |this: &mut T, _id| {
                 (activate)(this);
-            })),
+            }),
             ..Default::default()
         }
     }
@@ -398,7 +398,7 @@ pub(crate) struct RawMenuItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     disposition: Disposition,
-    pub on_clicked: Arc<Mutex<dyn Fn(&mut T, usize) + Send + Sync>>,
+    pub on_clicked: Box<dyn Fn(&mut T, usize) + Send + Sync>,
 }
 
 macro_rules! if_not_default_then_insert {
@@ -587,7 +587,7 @@ impl<T> Default for RawMenuItem<T> {
             toggle_state: ToggleState::Indeterminate,
             disposition: Disposition::Normal,
             //submenu: Vec::default(),
-            on_clicked: Arc::new(Mutex::new(|_this: &mut T, _id| Default::default())),
+            on_clicked: Box::new(|_this: &mut T, _id| Default::default()),
         }
     }
 }
@@ -728,9 +728,9 @@ pub(crate) fn menu_flatten<T: 'static>(
                                 ToggleState::Off
                             },
                             disposition: option.disposition,
-                            on_clicked: Arc::new(Mutex::new(move |this: &mut T, id| {
+                            on_clicked: Box::new(move |this: &mut T, id| {
                                 (on_selected)(this, id - offset);
-                            })),
+                            }),
                             ..Default::default()
                         };
                         let index = list.len();

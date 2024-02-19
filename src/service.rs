@@ -314,7 +314,7 @@ impl<T: Tray + Send + 'static> Service<T> {
         for (index, (old, new)) in old_menu
             .iter()
             .chain(std::iter::repeat(&(default, vec![])))
-            .zip(new_menu.clone().into_iter())
+            .zip(new_menu.iter())
             .enumerate()
         {
             let (old_item, old_childs) = old;
@@ -330,7 +330,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                         .push((self.index2id(index), removed_props));
                 }
             }
-            if *old_childs != new_childs {
+            if old_childs != new_childs {
                 layout_updated = true;
                 break;
             }

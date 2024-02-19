@@ -401,24 +401,6 @@ pub(crate) struct RawMenuItem<T> {
     pub on_clicked: Arc<Mutex<dyn Fn(&mut T, usize) + Send + Sync>>,
 }
 
-impl<T> Clone for RawMenuItem<T> {
-    fn clone(&self) -> Self {
-        RawMenuItem {
-            r#type: self.r#type.clone(),
-            label: self.label.clone(),
-            enabled: self.enabled,
-            visible: self.visible,
-            icon_name: self.icon_name.clone(),
-            icon_data: self.icon_data.clone(),
-            shortcut: self.shortcut.clone(),
-            toggle_type: self.toggle_type,
-            toggle_state: self.toggle_state,
-            disposition: self.disposition,
-            on_clicked: self.on_clicked.clone(),
-        }
-    }
-}
-
 macro_rules! if_not_default_then_insert {
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident) => {
         if_not_default_then_insert!($map, $item, $default, $filter, $property, (|r| r));
@@ -433,7 +415,7 @@ macro_rules! if_not_default_then_insert {
         {
             $map.insert(
                 $property_name.to_string(),
-                Value::from($to_refarg($item.$property)).into(),
+                Value::from($to_refarg($item.$property.clone())).into(),
             );
         }
     };
@@ -450,29 +432,28 @@ impl<T> RawMenuItem<T> {
         &self,
         filter: &Vec<String>,
     ) -> HashMap<String, OwnedValue> {
-        let item = self.clone();
         let mut properties: HashMap<String, OwnedValue> =
             HashMap::with_capacity(11);
 
         let default: RawMenuItem<T> = RawMenuItem::default();
         if_not_default_then_insert!(
             properties,
-            item,
+            self,
             default,
             filter,
             r#type,
             "type",
             (|r: ItemType| r.to_string())
         );
-        if_not_default_then_insert!(properties, item, default, filter, label);
-        if_not_default_then_insert!(properties, item, default, filter, enabled);
-        if_not_default_then_insert!(properties, item, default, filter, visible);
-        if_not_default_then_insert!(properties, item, default, filter, icon_name);
-        if_not_default_then_insert!(properties, item, default, filter, icon_data);
-        if_not_default_then_insert!(properties, item, default, filter, shortcut);
+        if_not_default_then_insert!(properties, self, default, filter, label);
+        if_not_default_then_insert!(properties, self, default, filter, enabled);
+        if_not_default_then_insert!(properties, self, default, filter, visible);
+        if_not_default_then_insert!(properties, self, default, filter, icon_name);
+        if_not_default_then_insert!(properties, self, default, filter, icon_data);
+        if_not_default_then_insert!(properties, self, default, filter, shortcut);
         if_not_default_then_insert!(
             properties,
-            item,
+            self,
             default,
             filter,
             toggle_type,
@@ -480,7 +461,7 @@ impl<T> RawMenuItem<T> {
         );
         if_not_default_then_insert!(
             properties,
-            item,
+            self,
             default,
             filter,
             toggle_state,
@@ -488,7 +469,7 @@ impl<T> RawMenuItem<T> {
         );
         if_not_default_then_insert!(
             properties,
-            item,
+            self,
             default,
             filter,
             disposition,
@@ -500,7 +481,7 @@ impl<T> RawMenuItem<T> {
 
     pub(crate) fn diff(
         &self,
-        other: Self,
+        other: &Self,
     ) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
         let default = Self::default();
         let mut updated_props: HashMap<String, OwnedValue> = HashMap::new();
@@ -516,7 +497,7 @@ impl<T> RawMenuItem<T> {
             if other.label == default.label {
                 removed_props.push("label".into());
             } else {
-                updated_props.insert("label".into(), Value::from(other.label).into());
+                updated_props.insert("label".into(), Value::from(other.label.clone()).into());
             }
         }
         if self.enabled != other.enabled {
@@ -537,21 +518,21 @@ impl<T> RawMenuItem<T> {
             if other.icon_name == default.icon_name {
                 removed_props.push("icon-name".into());
             } else {
-                updated_props.insert("icon-name".into(), Value::from(other.icon_name).into());
+                updated_props.insert("icon-name".into(), Value::from(other.icon_name.clone()).into());
             }
         }
         if self.icon_data != other.icon_data {
             if other.icon_data == default.icon_data {
                 removed_props.push("icon-data".into());
             } else {
-                updated_props.insert("icon-data".into(), Value::from(other.icon_data).into());
+                updated_props.insert("icon-data".into(), Value::from(other.icon_data.clone()).into());
             }
         }
         if self.shortcut != other.shortcut {
             if other.shortcut == default.shortcut {
                 removed_props.push("shortcut".into());
             } else {
-                updated_props.insert("shortcut".into(), Value::from(other.shortcut).into());
+                updated_props.insert("shortcut".into(), Value::from(other.shortcut.clone()).into());
             }
         }
         if self.toggle_type != other.toggle_type {

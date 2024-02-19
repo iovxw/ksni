@@ -1,10 +1,11 @@
 //! Types used to construct a menu
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use zbus::zvariant::{Value, OwnedValue};
+use zbus::zvariant::{OwnedValue, Str, Value};
 
 // pub struct Properties {
 //     /// Tells if the menus are in a normal state or they believe that they
@@ -425,7 +426,9 @@ macro_rules! if_not_default_then_insert {
         {
             $map.insert(
                 $property_name.to_string(),
-                Value::from($to_refarg($item.$property)).into(),
+                Value::from($to_refarg($item.$property))
+                    .try_to_owned()
+                    .unwrap(),
             );
         }
     };
@@ -438,13 +441,9 @@ impl<T> fmt::Debug for RawMenuItem<T> {
 }
 
 impl<T> RawMenuItem<T> {
-    pub(crate) fn to_dbus_map(
-        &self,
-        filter: &Vec<String>,
-    ) -> HashMap<String, OwnedValue> {
+    pub(crate) fn to_dbus_map(&self, filter: &Vec<String>) -> HashMap<String, OwnedValue> {
         let item = self.clone();
-        let mut properties: HashMap<String, OwnedValue> =
-            HashMap::with_capacity(11);
+        let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(11);
 
         let default: RawMenuItem<T> = RawMenuItem::default();
         if_not_default_then_insert!(
@@ -490,10 +489,7 @@ impl<T> RawMenuItem<T> {
         properties
     }
 
-    pub(crate) fn diff(
-        &self,
-        other: Self,
-    ) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
+    pub(crate) fn diff(&self, other: Self) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
         let default = Self::default();
         let mut updated_props: HashMap<String, OwnedValue> = HashMap::new();
         let mut removed_props = Vec::new();
@@ -501,49 +497,58 @@ impl<T> RawMenuItem<T> {
             if other.r#type == default.r#type {
                 removed_props.push("type".into());
             } else {
-                updated_props.insert("type".into(), Value::from(other.r#type.to_string()).into());
+                updated_props.insert("type".into(), OwnedValue::try_from(other.r#type).unwrap());
             }
         }
         if self.label != other.label {
             if other.label == default.label {
                 removed_props.push("label".into());
             } else {
-                updated_props.insert("label".into(), Value::from(other.label).into());
+                updated_props.insert("label".into(), OwnedValue::from(Str::from(other.label)));
             }
         }
         if self.enabled != other.enabled {
             if other.enabled == default.enabled {
                 removed_props.push("enabled".into());
             } else {
-                updated_props.insert("enabled".into(), Value::from(other.enabled).into());
+                updated_props.insert("enabled".into(), OwnedValue::from(other.enabled));
             }
         }
         if self.visible != other.visible {
             if other.visible == default.visible {
                 removed_props.push("visible".into());
             } else {
-                updated_props.insert("visible".into(), Value::from(other.visible).into());
+                updated_props.insert("visible".into(), OwnedValue::from(other.visible));
             }
         }
         if self.icon_name != other.icon_name {
             if other.icon_name == default.icon_name {
                 removed_props.push("icon-name".into());
             } else {
-                updated_props.insert("icon-name".into(), Value::from(other.icon_name).into());
+                updated_props.insert(
+                    "icon-name".into(),
+                    OwnedValue::from(Str::from(other.icon_name)),
+                );
             }
         }
         if self.icon_data != other.icon_data {
             if other.icon_data == default.icon_data {
                 removed_props.push("icon-data".into());
             } else {
-                updated_props.insert("icon-data".into(), Value::from(other.icon_data).into());
+                updated_props.insert(
+                    "icon-data".into(),
+                    Value::from(other.icon_data).try_to_owned().unwrap(),
+                );
             }
         }
         if self.shortcut != other.shortcut {
             if other.shortcut == default.shortcut {
                 removed_props.push("shortcut".into());
             } else {
-                updated_props.insert("shortcut".into(), Value::from(other.shortcut).into());
+                updated_props.insert(
+                    "shortcut".into(),
+                    Value::from(other.shortcut).try_to_owned().unwrap(),
+                );
             }
         }
         if self.toggle_type != other.toggle_type {
@@ -552,7 +557,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "toggle-type".into(),
-                    Value::from(other.toggle_type.to_string()).into(),
+                    OwnedValue::try_from(other.toggle_type).unwrap(),
                 );
             }
         }
@@ -562,7 +567,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "toggle-state".into(),
-                    OwnedValue::from(other.toggle_state as i32),
+                    OwnedValue::try_from(other.toggle_state).unwrap(),
                 );
             }
         }
@@ -572,7 +577,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "disposition".into(),
-                    Value::from(other.disposition.to_string()).into(),
+                    OwnedValue::try_from(other.disposition).unwrap(),
                 );
             }
         }
@@ -604,12 +609,13 @@ impl<T> Default for RawMenuItem<T> {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Value, OwnedValue)]
+#[repr(u8)]
 enum ItemType {
     /// An item which can be clicked to trigger an action or show another menu
-    Standard,
+    Standard = 0,
     /// A separator
-    Separator,
+    Separator = 1,
 }
 
 impl fmt::Display for ItemType {
@@ -622,14 +628,15 @@ impl fmt::Display for ItemType {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Value, OwnedValue)]
+#[repr(u8)]
 enum ToggleType {
     /// Item is an independent togglable item
-    Checkmark,
+    Checkmark = 0,
     /// Item is part of a group where only one item can be toggled at a time
-    Radio,
+    Radio = 1,
     /// Item cannot be toggled
-    Null,
+    Null = 2,
 }
 
 impl fmt::Display for ToggleType {
@@ -644,23 +651,25 @@ impl fmt::Display for ToggleType {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, OwnedValue, Value)]
+#[repr(u8)]
 enum ToggleState {
     Off = 0,
     On = 1,
-    Indeterminate = -1,
+    Indeterminate = 2,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Value, OwnedValue)]
+#[repr(u8)]
 pub enum Disposition {
     /// A standard menu item
-    Normal,
+    Normal = 0,
     /// Providing additional information to the user
-    Informative,
+    Informative = 1,
     /// Looking at potentially harmful results
-    Warning,
+    Warning = 2,
     /// Something bad could potentially happen
-    Alert,
+    Alert = 3,
 }
 
 impl fmt::Display for Disposition {

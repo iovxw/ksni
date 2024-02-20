@@ -17,4 +17,4 @@ dbus-tree = { version = "0.9" }
 thiserror = "1.0"
 
 [build-dependencies]
-dbus-codegen = { version = "0.9" }
+dbus-codegen = { version = "0.11" }

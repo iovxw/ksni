@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use zbus::zvariant::{OwnedValue, Value};
 
@@ -94,7 +94,7 @@ pub struct StandardItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
-    pub activate: Box<dyn Fn(&mut T) + Send + Sync>,
+    pub activate: Box<dyn Fn(&mut T) + Send>,
 }
 
 impl<T> Default for StandardItem<T> {
@@ -240,7 +240,7 @@ pub struct CheckmarkItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
-    pub activate: Box<dyn Fn(&mut T) + Send + Sync>,
+    pub activate: Box<dyn Fn(&mut T) + Send>,
 }
 
 impl<T> Default for CheckmarkItem<T> {
@@ -294,7 +294,7 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
 /// Menu item, contains [`RadioItem`]
 pub struct RadioGroup<T> {
     pub selected: usize,
-    pub select: Box<dyn Fn(&mut T, usize) + Send + Sync>,
+    pub select: Box<dyn Fn(&mut T, usize) + Send>,
     pub options: Vec<RadioItem>,
 }
 
@@ -398,7 +398,7 @@ pub(crate) struct RawMenuItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     disposition: Disposition,
-    pub on_clicked: Box<dyn Fn(&mut T, usize) + Send + Sync>,
+    pub on_clicked: Box<dyn Fn(&mut T, usize) + Send>,
 }
 
 macro_rules! if_not_default_then_insert {
@@ -712,7 +712,7 @@ pub(crate) fn menu_flatten<T: 'static>(
                 }
                 MenuItem::RadioGroup(group) => {
                     let offset = list.len();
-                    let on_selected = Arc::new(group.select);
+                    let on_selected = Arc::new(Mutex::new(group.select));
                     for (idx, option) in group.options.into_iter().enumerate() {
                         let on_selected = on_selected.clone();
                         let item = RawMenuItem {
@@ -731,7 +731,7 @@ pub(crate) fn menu_flatten<T: 'static>(
                             },
                             disposition: option.disposition,
                             on_clicked: Box::new(move |this: &mut T, id| {
-                                (on_selected)(this, id - offset);
+                                (on_selected.lock().unwrap())(this, id - offset);
                             }),
                             ..Default::default()
                         };

@@ -209,7 +209,7 @@ pub async fn run_async<T: Tray + Send + 'static>(
                         let result = service.id2index(id)
                             .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))
                             .map(|index| service.menu_cache[index].0.to_dbus_map(&vec![name]))
-                            .map(|value| Value::from(value).to_owned());
+                            .map(|value| OwnedValue::from(value));
                         let _ = r.send(result);
                     }
                     DbusMenuMessage::Event(id, event_id, data, timestamp, r) => {
@@ -478,7 +478,8 @@ impl<T: Tray + Send + 'static> Service<T> {
                             properties: item.1,
                             children: item.2,
                         }
-                        .into(),
+                        .try_into()
+                        .expect("unreachable: LayoutItem should not contain any fd"),
                     );
                 }
             } else {

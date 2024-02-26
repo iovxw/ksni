@@ -15,5 +15,5 @@ license = "Unlicense"
 thiserror = "1"
 futures = { version = "0.3", default-features = false }
 tokio = { version = "1", features = ["rt", "macros"] }
-zbus = { version = "3", features = ["tokio"], default-features = false }
+zbus = { version = "4", features = ["tokio"], default-features = false }
 serde = { version = "1", features = ["derive"] }

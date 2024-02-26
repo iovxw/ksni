@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use zbus::zvariant::{OwnedValue, Value};
+use zbus::zvariant::{OwnedValue, Str, Value};
 
 // pub struct Properties {
 //     /// Tells if the menus are in a normal state or they believe that they
@@ -415,7 +415,7 @@ macro_rules! if_not_default_then_insert {
         {
             $map.insert(
                 $property_name.to_string(),
-                Value::from($to_refarg($item.$property.clone())).into(),
+                OwnedValue::from($to_refarg($item.$property.clone())),
             );
         }
     };
@@ -439,21 +439,57 @@ impl<T> RawMenuItem<T> {
             filter,
             r#type,
             "type",
-            (|r: ItemType| r.to_string())
+            (|r: ItemType| -> Str { r.to_string().into() })
         );
-        if_not_default_then_insert!(properties, self, default, filter, label);
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            filter,
+            label,
+            (|r: String| -> Str { r.into() })
+        );
         if_not_default_then_insert!(properties, self, default, filter, enabled);
         if_not_default_then_insert!(properties, self, default, filter, visible);
-        if_not_default_then_insert!(properties, self, default, filter, icon_name);
-        if_not_default_then_insert!(properties, self, default, filter, icon_data);
-        if_not_default_then_insert!(properties, self, default, filter, shortcut);
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            filter,
+            icon_name,
+            (|r: String| -> Str { r.into() })
+        );
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            filter,
+            icon_data,
+            (|r: Vec<u8>| -> OwnedValue {
+                Value::from(r)
+                    .try_into()
+                    .expect("unreachable: Vec<u8> to OwnedValue")
+            })
+        );
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            filter,
+            shortcut,
+            (|r: Vec<Vec<String>>| -> OwnedValue {
+                Value::from(r)
+                    .try_into()
+                    .expect("unreachable: Vec<Vec<String>> to OwnedValue")
+            })
+        );
         if_not_default_then_insert!(
             properties,
             self,
             default,
             filter,
             toggle_type,
-            (|r: ToggleType| r.to_string())
+            (|r: ToggleType| -> Str { r.to_string().into() })
         );
         if_not_default_then_insert!(
             properties,
@@ -469,7 +505,7 @@ impl<T> RawMenuItem<T> {
             default,
             filter,
             disposition,
-            (|r: Disposition| r.to_string())
+            (|r: Disposition| -> Str { r.to_string().into() })
         );
 
         properties
@@ -483,28 +519,34 @@ impl<T> RawMenuItem<T> {
             if other.r#type == default.r#type {
                 removed_props.push("type".into());
             } else {
-                updated_props.insert("type".into(), Value::from(other.r#type.to_string()).into());
+                updated_props.insert(
+                    "type".into(),
+                    <OwnedValue as From<Str>>::from(other.r#type.to_string().into()),
+                );
             }
         }
         if self.label != other.label {
             if other.label == default.label {
                 removed_props.push("label".into());
             } else {
-                updated_props.insert("label".into(), Value::from(other.label.clone()).into());
+                updated_props.insert(
+                    "label".into(),
+                    <OwnedValue as From<Str>>::from(other.label.clone().into()),
+                );
             }
         }
         if self.enabled != other.enabled {
             if other.enabled == default.enabled {
                 removed_props.push("enabled".into());
             } else {
-                updated_props.insert("enabled".into(), Value::from(other.enabled).into());
+                updated_props.insert("enabled".into(), OwnedValue::from(other.enabled));
             }
         }
         if self.visible != other.visible {
             if other.visible == default.visible {
                 removed_props.push("visible".into());
             } else {
-                updated_props.insert("visible".into(), Value::from(other.visible).into());
+                updated_props.insert("visible".into(), OwnedValue::from(other.visible));
             }
         }
         if self.icon_name != other.icon_name {
@@ -513,7 +555,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "icon-name".into(),
-                    Value::from(other.icon_name.clone()).into(),
+                    <OwnedValue as From<Str>>::from(other.icon_name.clone().into()),
                 );
             }
         }
@@ -523,7 +565,8 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "icon-data".into(),
-                    Value::from(other.icon_data.clone()).into(),
+                    <OwnedValue as TryFrom<Value>>::try_from(other.icon_data.clone().into())
+                        .expect("unreachable: Vec<u8> to OwnedValue"),
                 );
             }
         }
@@ -533,7 +576,8 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "shortcut".into(),
-                    Value::from(other.shortcut.clone()).into(),
+                    <OwnedValue as TryFrom<Value>>::try_from(other.shortcut.clone().into())
+                        .expect("unreachable: Vec<Vec<u8>> to OwnedValue"),
                 );
             }
         }
@@ -543,7 +587,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "toggle-type".into(),
-                    Value::from(other.toggle_type.to_string()).into(),
+                    <OwnedValue as From<Str>>::from(other.toggle_type.to_string().into()),
                 );
             }
         }
@@ -563,7 +607,7 @@ impl<T> RawMenuItem<T> {
             } else {
                 updated_props.insert(
                     "disposition".into(),
-                    Value::from(other.disposition.to_string()).into(),
+                    <OwnedValue as From<Str>>::from(other.disposition.to_string().into()),
                 );
             }
         }

@@ -439,7 +439,7 @@ impl<T> RawMenuItem<T> {
             filter,
             r#type,
             "type",
-            (|r: ItemType| -> Str { r.to_string().into() })
+            (|r: ItemType| r)
         );
         if_not_default_then_insert!(
             properties,
@@ -483,30 +483,9 @@ impl<T> RawMenuItem<T> {
                     .expect("unreachable: Vec<Vec<String>> to OwnedValue")
             })
         );
-        if_not_default_then_insert!(
-            properties,
-            self,
-            default,
-            filter,
-            toggle_type,
-            (|r: ToggleType| -> Str { r.to_string().into() })
-        );
-        if_not_default_then_insert!(
-            properties,
-            self,
-            default,
-            filter,
-            toggle_state,
-            (|r| r as i32)
-        );
-        if_not_default_then_insert!(
-            properties,
-            self,
-            default,
-            filter,
-            disposition,
-            (|r: Disposition| -> Str { r.to_string().into() })
-        );
+        if_not_default_then_insert!(properties, self, default, filter, toggle_type);
+        if_not_default_then_insert!(properties, self, default, filter, toggle_state);
+        if_not_default_then_insert!(properties, self, default, filter, disposition);
 
         properties
     }
@@ -657,6 +636,17 @@ impl fmt::Display for ItemType {
     }
 }
 
+impl From<ItemType> for OwnedValue {
+    fn from(value: ItemType) -> Self {
+        use ItemType::*;
+        let s = match value {
+            Standard => "standard",
+            Separator => "separator",
+        };
+        Str::from_static(s).into()
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum ToggleType {
     /// Item is an independent togglable item
@@ -679,11 +669,29 @@ impl fmt::Display for ToggleType {
     }
 }
 
+impl From<ToggleType> for OwnedValue {
+    fn from(value: ToggleType) -> Self {
+        use ToggleType::*;
+        let s = match value {
+            Checkmark => "checkmark",
+            Radio => "radio",
+            Null => "",
+        };
+        Str::from_static(s).into()
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum ToggleState {
     Off = 0,
     On = 1,
     Indeterminate = -1,
+}
+
+impl From<ToggleState> for OwnedValue {
+    fn from(value: ToggleState) -> Self {
+        (value as i32).into()
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -709,6 +717,19 @@ impl fmt::Display for Disposition {
             Alert => "alert",
         };
         f.write_str(r)
+    }
+}
+
+impl From<Disposition> for OwnedValue {
+    fn from(value: Disposition) -> Self {
+        use Disposition::*;
+        let s = match value {
+            Normal => "normal",
+            Informative => "informative",
+            Warning => "warning",
+            Alert => "alert",
+        };
+        Str::from_static(s).into()
     }
 }
 

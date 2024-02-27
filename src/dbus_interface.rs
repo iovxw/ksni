@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
-use zbus::{dbus_interface, dbus_proxy, SignalContext};
+use zbus::SignalContext;
 
 use crate::{Icon, ToolTip};
 
@@ -12,7 +12,7 @@ pub const MENU_PATH: &str = "/MenuBar";
 
 type ReplySender<T> = oneshot::Sender<zbus::fdo::Result<T>>;
 
-#[dbus_proxy(
+#[zbus::proxy(
     interface = "org.kde.StatusNotifierWatcher",
     default_service = "org.kde.StatusNotifierWatcher",
     default_path = "/StatusNotifierWatcher"
@@ -23,26 +23,26 @@ trait StatusNotifierWatcher {
     async fn register_status_notifier_host(&self, service: &str) -> zbus::Result<()>;
 
     // properties
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn registered_status_notifier_items(&self) -> zbus::Result<Vec<String>>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn is_status_notifier_host_registered(&self) -> zbus::Result<bool>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn protocol_version(&self) -> zbus::Result<i32>;
 
     // signals
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_item_registered(&self, name: &str) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_item_unregistered(&self, name: &str) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_host_registered(&self) -> zbus::Result<()>;
 
-    #[dbus_proxy(signal)]
+    #[zbus(signal)]
     fn status_notifier_host_unregistered(&self) -> zbus::Result<()>;
 }
 
@@ -100,7 +100,7 @@ impl StatusNotifierItem {
     }
 }
 
-#[dbus_interface(name = "org.kde.StatusNotifierItem")]
+#[zbus::interface(name = "org.kde.StatusNotifierItem")]
 impl StatusNotifierItem {
     // methods
     fn context_menu(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
@@ -120,117 +120,117 @@ impl StatusNotifierItem {
     }
 
     // properties
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn category(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::Category(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn id(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::Id(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn title(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::Title(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::Status(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn window_id(&self) -> zbus::fdo::Result<i32> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::WindowId(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn icon_theme_path(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::IconThemePath(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn menu(&self) -> zbus::fdo::Result<ObjectPath<'_>> {
         Ok(ObjectPath::from_static_str(MENU_PATH).expect("MENU_PATH valid"))
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn item_is_menu(&self) -> zbus::fdo::Result<bool> {
         Ok(false)
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn icon_name(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::IconName(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::IconPixmap(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn overlay_icon_name(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::OverlayIconName(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn overlay_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::OverlayIconPixmap(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn attention_icon_name(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::AttentionIconName(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn attention_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::AttentionIconPixmap(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn attention_movie_name(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::AttentionMovieName(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn tool_tip(&self) -> zbus::fdo::Result<ToolTip> {
         let (tx, rx) = oneshot::channel();
         self.get(SniProperty::ToolTip(tx), rx).await
     }
 
     // signals
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn new_title(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn new_icon(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn new_attention_icon(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn new_overlay_icon(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn new_tool_tip(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
 
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn new_status(ctxt: &SignalContext<'_>, status: &str) -> zbus::Result<()>;
 }
 
@@ -299,7 +299,7 @@ impl DbusMenu {
     }
 }
 
-#[dbus_interface(name = "com.canonical.dbusmenu")]
+#[zbus::interface(name = "com.canonical.dbusmenu")]
 impl DbusMenu {
     // methods
     async fn get_layout(
@@ -369,38 +369,38 @@ impl DbusMenu {
     }
 
     // properties
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn version(&self) -> zbus::fdo::Result<u32> {
         Ok(3)
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn text_direction(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(DbusMenuProperty::TextDirection(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<String> {
         let (tx, rx) = oneshot::channel();
         self.get(DbusMenuProperty::Status(tx), rx).await
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn icon_theme_path(&self) -> zbus::fdo::Result<Vec<String>> {
         let (tx, rx) = oneshot::channel();
         self.get(DbusMenuProperty::IconThemePath(tx), rx).await
     }
 
     // signals
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn items_properties_updated(
         ctxt: &SignalContext<'_>,
         updated_props: Vec<(i32, HashMap<String, OwnedValue>)>,
         removed_props: Vec<(i32, Vec<String>)>,
     ) -> zbus::Result<()>;
 
-    #[dbus_interface(signal)]
+    #[zbus(signal)]
     pub async fn layout_updated(
         ctxt: &SignalContext<'_>,
         revision: u32,

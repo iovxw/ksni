@@ -166,18 +166,6 @@ pub enum ClientRequest<T> {
     Shutdown,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum ClientError<T> {
-    #[error("zbus error: {0}")]
-    Dbus(#[from] zbus::Error),
-    #[error("recv error: {0}")]
-    RecvError(#[from] std::sync::mpsc::RecvError),
-    #[error("send error: {0}")]
-    SendError(#[from] std::sync::mpsc::SendError<ClientRequest<T>>),
-    #[error("send error: {0}")]
-    TokioSendError(#[from] tokio::sync::mpsc::error::SendError<ClientRequest<T>>),
-}
-
 /// Handle to the tray
 pub struct Handle<T> {
     sender: tokio::sync::mpsc::UnboundedSender<ClientRequest<T>>,
@@ -185,22 +173,28 @@ pub struct Handle<T> {
 
 impl<T> Handle<T> {
     /// Update the tray
+    ///
+    /// Returns the result of `f`, returns `None` if the tray service
+    /// has been shutdown.
     pub fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(
         &self,
         f: F,
-    ) -> Result<R, ClientError<T>> {
+    ) -> Option<R> {
         let (tx, rx) = std::sync::mpsc::channel();
         self.sender
             .send(ClientRequest::Update(Box::new(move |t: &mut T| {
                 let _ = tx.send((f)(t));
-            })))?;
-        Ok(rx.recv()?)
+            })))
+            .ok()?;
+        rx.recv().ok()
     }
 
     /// Shutdown the tray service
-    pub fn shutdown(&self) -> Result<(), ClientError<T>> {
+    ///
+    /// Returns `false` is the tray service has been shutdown.
+    pub fn shutdown(&self) -> bool {
         // TODO: use a channel to wait for shutdown to finish?
-        Ok(self.sender.send(ClientRequest::Shutdown)?)
+        self.sender.send(ClientRequest::Shutdown).is_ok()
     }
 }
 

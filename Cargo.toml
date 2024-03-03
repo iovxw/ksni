@@ -11,9 +11,28 @@ keywords = ["systray", "linux", "gui"]
 categories = ["api-bindings"]
 license = "Unlicense"
 
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio", "zbus/tokio"]
+async-io = [
+    "dep:async-io",
+    "dep:async-executor",
+    "dep:futures-lite",
+    "dep:futures-channel",
+    "dep:futures-util",
+    "zbus/async-io",
+]
+
 [dependencies]
 thiserror = "1"
 futures = { version = "0.3", default-features = false }
-tokio = { version = "1", features = ["rt", "macros"] }
-zbus = { version = "4", features = ["tokio"], default-features = false }
+zbus = { version = "4", default-features = false }
 serde = { version = "1", features = ["derive"] }
+
+tokio = { version = "1", features = ["rt", "macros"], optional = true }
+
+async-io = { version = "2", optional = true }
+async-executor = { version = "1", optional = true }
+futures-lite = { version = "2", optional = true }
+futures-channel = { version = "0.3", optional = true }
+futures-util = { version = "0.3", optional = true }

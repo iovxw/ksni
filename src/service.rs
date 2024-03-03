@@ -7,11 +7,13 @@ use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Str};
 use zbus::Connection;
 
+use crate::compat::mpsc;
 use crate::dbus_interface::{
     DbusMenu, DbusMenuMessage, DbusMenuProperty, LayoutItem, SniMessage, SniProperty,
     StatusNotifierItem, StatusNotifierWatcherProxy, MENU_PATH, SNI_PATH,
 };
 
+use crate::compat::select;
 use crate::menu;
 use crate::tray;
 use crate::{ClientRequest, Handle, Tray};
@@ -20,17 +22,27 @@ static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 // TODO: don't use zbus result publicly(?)
 pub fn spawn<T: Tray + Send + 'static>(tray: T) -> zbus::Result<Handle<T>> {
-    let (client_tx, client_rx) = tokio::sync::mpsc::unbounded_channel::<ClientRequest<T>>();
+    let (client_tx, client_rx) = mpsc::unbounded_channel::<ClientRequest<T>>();
     std::thread::Builder::new()
         .name("ksni-tokio".into())
         .spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("tokio::new_current_thread()");
-            rt.block_on(async move {
-                let _ = run_async(tray, client_rx).await;
-            });
+            #[cfg(feature = "tokio")]
+            {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("tokio::new_current_thread()");
+                rt.block_on(async move {
+                    let _ = run_async(tray, client_rx).await;
+                });
+            }
+            #[cfg(feature = "async-io")]
+            {
+                let ex = async_executor::LocalExecutor::new();
+                futures_lite::future::block_on(ex.run(async move {
+                    let _ = run_async(tray, client_rx).await;
+                }));
+            }
         })
         .map_err(|e| zbus::Error::Failure(e.to_string()))?;
 
@@ -39,7 +51,7 @@ pub fn spawn<T: Tray + Send + 'static>(tray: T) -> zbus::Result<Handle<T>> {
 
 pub async fn run_async<T: Tray + Send + 'static>(
     tray: T,
-    mut client_rx: tokio::sync::mpsc::UnboundedReceiver<ClientRequest<T>>,
+    mut client_rx: mpsc::UnboundedReceiver<ClientRequest<T>>,
 ) -> zbus::Result<()> {
     let conn = Connection::session().await.unwrap();
     let name = format!(
@@ -85,7 +97,7 @@ pub async fn run_async<T: Tray + Send + 'static>(
         revision: 0,
     };
     loop {
-        tokio::select! {
+        select! {
             Some(event) = name_changed_signal.next() => {
                 if let Ok(args) = event.args() {
                     match args.new_owner().as_ref() {

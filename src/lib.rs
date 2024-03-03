@@ -2,6 +2,7 @@
 //!
 //! See the [README.md](https://github.com/iovxw/ksni) for an example
 
+mod compat;
 mod dbus_interface;
 pub mod menu;
 mod service;
@@ -11,6 +12,8 @@ mod tray;
 pub use menu::{MenuItem, TextDirection};
 pub use service::{run_async, spawn};
 pub use tray::{Category, Icon, Status, ToolTip};
+
+use crate::compat::mpsc;
 
 /// A system tray, implement this to create your tray
 ///
@@ -168,7 +171,7 @@ pub enum ClientRequest<T> {
 
 /// Handle to the tray
 pub struct Handle<T> {
-    sender: tokio::sync::mpsc::UnboundedSender<ClientRequest<T>>,
+    sender: mpsc::UnboundedSender<ClientRequest<T>>,
 }
 
 impl<T> Handle<T> {

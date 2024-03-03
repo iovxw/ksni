@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
 use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
 use zbus::SignalContext;
 
+use crate::compat::{mpsc, oneshot};
 use crate::{Icon, ToolTip};
 
 pub const SNI_PATH: &str = "/StatusNotifierItem";
@@ -73,12 +73,12 @@ pub enum SniProperty {
 }
 
 pub struct StatusNotifierItem {
-    sender: tokio::sync::mpsc::UnboundedSender<SniMessage>,
+    sender: mpsc::UnboundedSender<SniMessage>,
 }
 
 impl StatusNotifierItem {
-    pub fn new() -> (Self, tokio::sync::mpsc::UnboundedReceiver<SniMessage>) {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<SniMessage>) {
+        let (tx, rx) = mpsc::unbounded_channel();
         (StatusNotifierItem { sender: tx }, rx)
     }
 
@@ -263,12 +263,12 @@ pub enum DbusMenuProperty {
 }
 
 pub struct DbusMenu {
-    sender: tokio::sync::mpsc::UnboundedSender<DbusMenuMessage>,
+    sender: mpsc::UnboundedSender<DbusMenuMessage>,
 }
 
 impl DbusMenu {
-    pub fn new() -> (Self, tokio::sync::mpsc::UnboundedReceiver<DbusMenuMessage>) {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<DbusMenuMessage>) {
+        let (tx, rx) = mpsc::unbounded_channel();
         (DbusMenu { sender: tx }, rx)
     }
 

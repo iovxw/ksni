@@ -7,10 +7,10 @@ pub use tokio::select;
 #[cfg(feature = "async-io")]
 #[macro_export]
 macro_rules! select {
-    ($(Some($val:ident) = $exp:expr => $blk:block)*) => {
+    ($($patten:pat = $exp:expr => $blk:block)*) => {
          futures_util::select! {
-             $( $val = $exp => {
-                 let Some($val) = $val else { continue };
+             $( v = $exp => {
+                 let $patten = v else { continue };
                  $blk
              } )*
          }

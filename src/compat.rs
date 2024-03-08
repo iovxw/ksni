@@ -26,7 +26,7 @@ pub mod mpsc {
 
 #[cfg(feature = "async-io")]
 pub mod mpsc {
-    use futures::StreamExt;
+    use futures_util::StreamExt;
 
     pub use futures_channel::mpsc::TrySendError as SendError;
 

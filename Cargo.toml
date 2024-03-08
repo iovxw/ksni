@@ -19,13 +19,12 @@ async-io = [
     "dep:async-executor",
     "dep:futures-lite",
     "dep:futures-channel",
-    "dep:futures-util",
     "zbus/async-io",
 ]
 
 [dependencies]
 thiserror = "1"
-futures = { version = "0.3", default-features = false }
+futures-util = "0.3"
 zbus = { version = "4", default-features = false }
 serde = { version = "1", features = ["derive"] }
 
@@ -35,4 +34,3 @@ async-io = { version = "2", optional = true }
 async-executor = { version = "1", optional = true }
 futures-lite = { version = "2", optional = true }
 futures-channel = { version = "0.3", optional = true }
-futures-util = { version = "0.3", optional = true }

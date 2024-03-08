@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use futures::stream::StreamExt;
+use futures_util::StreamExt;
 use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Str};
 use zbus::Connection;

@@ -202,26 +202,23 @@ pub async fn run_async<T: Tray + Send + 'static>(
                         let _ = r.send(result);
                     }
                     DbusMenuMessage::GetGroupProperties(ids, property_names, r) => {
-                        let result = ids
+                        let items = ids
                             .into_iter()
-                            .filter_map(|id| service.id2index(id).map(|idx| (id, idx)))
-                            .map(|(id, index)| {
-                                (
-                                    id,
-                                    service.menu_cache[index]
-                                        .0
-                                        .to_dbus_map(&property_names),
-                                )
-                            })
+                            .filter_map(|id| service.get_menu_item(id, &property_names).map(|r|(id, r)))
+                            .filter(|r| !r.1.is_empty())
                             .collect();
-                        let _ = r.send(Ok(result));
+                        // TODO: return an error if items is empty
+                        let _ = r.send(Ok(items));
                     }
                     DbusMenuMessage::GetProperty(id, name, r) => {
-                        let result = service.id2index(id)
-                            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))
-                            .map(|index| service.menu_cache[index].0.to_dbus_map(&vec![name]))
-                            .map(|value| OwnedValue::from(value));
-                        let _ = r.send(result);
+                        let _ = r.send(
+                            service
+                                .get_menu_item(id, &[name])
+                                .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".into()))
+                                .map(|map| map.into_iter().next().map(|entry| entry.1))
+                                .transpose()
+                                .unwrap_or_else(|| Err(zbus::fdo::Error::InvalidArgs("property not found".into()))),
+                        );
                     }
                     DbusMenuMessage::Event(id, event_id, data, timestamp, r) => {
                         let _ = r.send(service.event(id, &event_id, data, timestamp).await);
@@ -435,7 +432,10 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .expect("id overflow")
         }
     }
+}
 
+// dbus methods
+impl<T: Tray + Send + 'static> Service<T> {
     // Return None if parent_id not found
     fn gen_dbusmenu_tree(
         &self,
@@ -507,6 +507,15 @@ impl<T: Tray + Send + 'static> Service<T> {
             properties: resp.1,
             children: resp.2,
         })
+    }
+
+    fn get_menu_item(
+        &self,
+        id: i32,
+        property_filter: &[String],
+    ) -> Option<HashMap<String, OwnedValue>> {
+        self.id2index(id)
+            .map(|index| self.menu_cache[index].0.to_dbus_map(property_filter))
     }
 
     async fn event(

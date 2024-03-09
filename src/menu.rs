@@ -428,7 +428,7 @@ impl<T> fmt::Debug for RawMenuItem<T> {
 }
 
 impl<T> RawMenuItem<T> {
-    pub(crate) fn to_dbus_map(&self, filter: &Vec<String>) -> HashMap<String, OwnedValue> {
+    pub(crate) fn to_dbus_map(&self, property_filter: &[String]) -> HashMap<String, OwnedValue> {
         let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(11);
 
         let default: RawMenuItem<T> = RawMenuItem::default();
@@ -436,7 +436,7 @@ impl<T> RawMenuItem<T> {
             properties,
             self,
             default,
-            filter,
+            property_filter,
             r#type,
             "type",
             (|r: ItemType| r)
@@ -445,17 +445,17 @@ impl<T> RawMenuItem<T> {
             properties,
             self,
             default,
-            filter,
+            property_filter,
             label,
             (|r: String| -> Str { r.into() })
         );
-        if_not_default_then_insert!(properties, self, default, filter, enabled);
-        if_not_default_then_insert!(properties, self, default, filter, visible);
+        if_not_default_then_insert!(properties, self, default, property_filter, enabled);
+        if_not_default_then_insert!(properties, self, default, property_filter, visible);
         if_not_default_then_insert!(
             properties,
             self,
             default,
-            filter,
+            property_filter,
             icon_name,
             (|r: String| -> Str { r.into() })
         );
@@ -463,7 +463,7 @@ impl<T> RawMenuItem<T> {
             properties,
             self,
             default,
-            filter,
+            property_filter,
             icon_data,
             (|r: Vec<u8>| -> OwnedValue {
                 Value::from(r)
@@ -475,7 +475,7 @@ impl<T> RawMenuItem<T> {
             properties,
             self,
             default,
-            filter,
+            property_filter,
             shortcut,
             (|r: Vec<Vec<String>>| -> OwnedValue {
                 Value::from(r)
@@ -483,9 +483,9 @@ impl<T> RawMenuItem<T> {
                     .expect("unreachable: Vec<Vec<String>> to OwnedValue")
             })
         );
-        if_not_default_then_insert!(properties, self, default, filter, toggle_type);
-        if_not_default_then_insert!(properties, self, default, filter, toggle_state);
-        if_not_default_then_insert!(properties, self, default, filter, disposition);
+        if_not_default_then_insert!(properties, self, default, property_filter, toggle_type);
+        if_not_default_then_insert!(properties, self, default, property_filter, toggle_state);
+        if_not_default_then_insert!(properties, self, default, property_filter, disposition);
 
         properties
     }

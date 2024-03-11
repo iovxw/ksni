@@ -271,8 +271,7 @@ impl<T: Tray + Send + 'static> Service<T> {
             .interface::<_, DbusMenu>(MENU_PATH)
             .await?;
 
-        let text_direction = self.prop_cache.text_direction_changed(&self.tray);
-        if text_direction.is_some() {
+        if self.prop_cache.text_direction_changed(&self.tray) {
             menu_obj
                 .get_mut()
                 .await
@@ -280,8 +279,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        let tray_status = self.prop_cache.status_changed(&self.tray);
-        if let Some(tray_status) = tray_status {
+        if let Some(tray_status) = self.prop_cache.status_changed(&self.tray) {
             StatusNotifierItem::new_status(sni_obj.signal_context(), &tray_status.to_string())
                 .await?;
             menu_obj
@@ -291,8 +289,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        let icon_theme_path = self.prop_cache.icon_theme_path_changed(&self.tray);
-        if icon_theme_path.is_some() {
+        if self.prop_cache.icon_theme_path_changed(&self.tray) {
             sni_obj
                 .get_mut()
                 .await
@@ -305,8 +302,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        let category = self.prop_cache.category_changed(&self.tray);
-        if category.is_some() {
+        if self.prop_cache.category_changed(&self.tray) {
             sni_obj
                 .get_mut()
                 .await
@@ -314,8 +310,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        let window_id = self.prop_cache.window_id_changed(&self.tray);
-        if window_id.is_some() {
+        if self.prop_cache.window_id_changed(&self.tray) {
             sni_obj
                 .get_mut()
                 .await
@@ -592,22 +587,16 @@ impl PropertiesCache {
         }
     }
 
-    fn category_changed<T: Tray>(&mut self, t: &T) -> Option<crate::Category> {
-        let v = t.category();
-        if self.category != v {
-            self.category = v;
-            Some(v)
-        } else {
-            None
-        }
+    fn category_changed<T: Tray>(&mut self, t: &T) -> bool {
+        let old = self.category;
+        self.category = t.category();
+        self.category != old
     }
 
     fn title_changed<T: Tray>(&mut self, t: &T) -> bool {
-        let hash = hash_of(t.title());
-        self.title != hash && {
-            self.title = hash;
-            true
-        }
+        let old = self.title;
+        self.title = hash_of(t.title());
+        self.title != old
     }
 
     fn status_changed<T: Tray>(&mut self, t: &T) -> Option<crate::Status> {
@@ -620,71 +609,50 @@ impl PropertiesCache {
         }
     }
 
-    fn window_id_changed<T: Tray>(&mut self, t: &T) -> Option<i32> {
-        let v = t.window_id();
-        if self.window_id != v {
-            self.window_id = v;
-            Some(v)
-        } else {
-            None
-        }
+    fn window_id_changed<T: Tray>(&mut self, t: &T) -> bool {
+        let old = self.window_id;
+        self.window_id = t.window_id();
+        self.window_id != old
     }
 
-    fn icon_theme_path_changed<T: Tray>(&mut self, t: &T) -> Option<String> {
-        let v = t.icon_theme_path();
-        let hash = hash_of(&v);
-        if self.icon_theme_path != hash {
-            self.icon_theme_path = hash;
-            Some(v)
-        } else {
-            None
-        }
+    fn icon_theme_path_changed<T: Tray>(&mut self, t: &T) -> bool {
+        let old = self.icon_theme_path;
+        self.icon_theme_path = hash_of(&t.icon_theme_path());
+        self.icon_theme_path != old
     }
 
     fn icon_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let hash = hash_of((tray.icon_name(), tray.icon_pixmap()));
-        self.icon != hash && {
-            self.icon = hash;
-            true
-        }
+        let old = self.icon;
+        self.icon = hash_of((tray.icon_name(), tray.icon_pixmap()));
+        self.icon != old
     }
 
     fn overlay_icon_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let hash = hash_of((tray.overlay_icon_name(), tray.overlay_icon_pixmap()));
-        self.overlay_icon != hash && {
-            self.overlay_icon = hash;
-            true
-        }
+        let old = self.overlay_icon;
+        self.overlay_icon = hash_of((tray.overlay_icon_name(), tray.overlay_icon_pixmap()));
+        self.overlay_icon != old
     }
 
     fn attention_icon_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let hash = hash_of((
+        let old = self.attention_icon;
+        self.attention_icon = hash_of((
             tray.attention_icon_name(),
             tray.attention_icon_pixmap(),
             tray.attention_movie_name(),
         ));
-        self.attention_icon != hash && {
-            self.attention_icon = hash;
-            true
-        }
+        self.attention_icon != old
     }
 
     fn tool_tip_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let hash = hash_of(tray.tool_tip());
-        self.tool_tip != hash && {
-            self.tool_tip = hash;
-            true
-        }
+        let old = self.tool_tip;
+        self.tool_tip = hash_of(tray.tool_tip());
+        self.tool_tip != old
     }
 
-    fn text_direction_changed<T: Tray>(&mut self, t: &T) -> Option<crate::TextDirection> {
-        let v = t.text_direction();
-        if self.text_direction != v {
-            self.text_direction = v;
-            Some(v)
-        } else {
-            None
-        }
+    fn text_direction_changed<T: Tray>(&mut self, t: &T) -> bool {
+        let old = self.text_direction;
+        self.text_direction = t.text_direction();
+        self.text_direction != old
     }
 }
 

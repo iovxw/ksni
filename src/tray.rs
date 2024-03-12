@@ -3,7 +3,7 @@ use std::fmt;
 use zbus::zvariant::{Type, Value};
 
 /// Category of this item.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Category {
     /// The item describes the status of a generic application, for instance
     /// the current state of a media player. In the case where the category of
@@ -36,7 +36,7 @@ impl fmt::Display for Category {
 }
 
 /// Status of this item or of the associated application.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Status {
     /// The item doesn't convey important information to the user, it can be
     /// considered an "idle" status and is likely that visualizations will chose

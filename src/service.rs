@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::StreamExt;
+use paste::paste;
 use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Str};
 use zbus::Connection;
@@ -87,12 +88,12 @@ pub async fn run_async<T: Tray + Send + 'static>(
         .await?;
 
     let menu_cache = menu::menu_flatten(T::menu(&tray));
-    let prop_cache = PropertiesCache::new(&tray);
+    let prop_cache = PropertiesMonitor::new(&tray);
     let mut service = Service {
         conn,
         tray,
         menu_cache,
-        prop_cache,
+        prop_monitor: prop_cache,
         item_id_offset: 0,
         revision: 0,
     };
@@ -140,46 +141,46 @@ pub async fn run_async<T: Tray + Send + 'static>(
                     }
                     SniMessage::GetDbusProperty(prop) => match prop {
                         SniProperty::Category(r) => {
-                            let _ = r.send(Ok(service.tray.category().to_string()));
+                            let _ = r.send(Ok(service.get_category().to_string()));
                         }
                         SniProperty::Id(r) => {
-                            let _ = r.send(Ok(service.tray.id()));
+                            let _ = r.send(Ok(service.get_id()));
                         }
                         SniProperty::Title(r) => {
-                            let _ = r.send(Ok(service.tray.title()));
+                            let _ = r.send(Ok(service.get_title()));
                         }
                         SniProperty::Status(r) => {
-                            let _ = r.send(Ok(service.tray.status().to_string()));
+                            let _ = r.send(Ok(service.get_status().to_string()));
                         }
                         SniProperty::WindowId(r) => {
-                            let _ = r.send(Ok(service.tray.window_id()));
+                            let _ = r.send(Ok(service.get_window_id()));
                         }
                         SniProperty::IconThemePath(r) => {
-                            let _ = r.send(Ok(service.tray.icon_theme_path()));
+                            let _ = r.send(Ok(service.get_icon_theme_path()));
                         }
                         SniProperty::IconName(r) => {
-                            let _ = r.send(Ok(service.tray.icon_name()));
+                            let _ = r.send(Ok(service.get_icon_name()));
                         }
                         SniProperty::IconPixmap(r) => {
-                            let _ = r.send(Ok(service.tray.icon_pixmap()));
+                            let _ = r.send(Ok(service.get_icon_pixmap()));
                         }
                         SniProperty::OverlayIconName(r) => {
-                            let _ = r.send(Ok(service.tray.overlay_icon_name()));
+                            let _ = r.send(Ok(service.get_overlay_icon_name()));
                         }
                         SniProperty::OverlayIconPixmap(r) => {
-                            let _ = r.send(Ok(service.tray.overlay_icon_pixmap()));
+                            let _ = r.send(Ok(service.get_overlay_icon_pixmap()));
                         }
                         SniProperty::AttentionIconName(r) => {
-                            let _ = r.send(Ok(service.tray.attention_icon_name()));
+                            let _ = r.send(Ok(service.get_attention_icon_name()));
                         }
                         SniProperty::AttentionIconPixmap(r) => {
-                            let _ = r.send(Ok(service.tray.attention_icon_pixmap()));
+                            let _ = r.send(Ok(service.get_attention_icon_pixmap()));
                         }
                         SniProperty::AttentionMovieName(r) => {
-                            let _ = r.send(Ok(service.tray.attention_movie_name()));
+                            let _ = r.send(Ok(service.get_attention_movie_name()));
                         }
                         SniProperty::ToolTip(r) => {
-                            let _ = r.send(Ok(service.tray.tool_tip()));
+                            let _ = r.send(Ok(service.get_tool_tip()));
                         }
                     }
                 }
@@ -228,17 +229,17 @@ pub async fn run_async<T: Tray + Send + 'static>(
                     }
                     DbusMenuMessage::GetDbusProperty(prop) => match prop {
                         DbusMenuProperty::TextDirection(r) => {
-                            let _ = r.send(Ok(service.tray.text_direction().to_string()));
+                            let _ = r.send(Ok(service.get_text_direction().to_string()));
                         }
                         DbusMenuProperty::Status(r) => {
-                            let status = match service.tray.status() {
+                            let status = match service.get_status() {
                                 tray::Status::Active | tray::Status::Passive => menu::Status::Normal,
                                 tray::Status::NeedsAttention => menu::Status::Notice,
                             };
                             let _ = r.send(Ok(status.to_string()));
                         }
                         DbusMenuProperty::IconThemePath(r) => {
-                            let path = service.tray.icon_theme_path();
+                            let path = service.get_icon_theme_path();
                             let path = if path.is_empty() { vec![] } else { vec![path] };
                             let _ = r.send(Ok(path));
                         }
@@ -253,7 +254,7 @@ struct Service<T> {
     conn: Connection,
     tray: T,
     menu_cache: Vec<(menu::RawMenuItem<T>, Vec<usize>)>,
-    prop_cache: PropertiesCache,
+    prop_monitor: PropertiesMonitor,
     item_id_offset: i32,
     revision: u32,
 }
@@ -271,7 +272,7 @@ impl<T: Tray + Send + 'static> Service<T> {
             .interface::<_, DbusMenu>(MENU_PATH)
             .await?;
 
-        if self.prop_cache.text_direction_changed(&self.tray) {
+        if self.text_direction_changed() {
             menu_obj
                 .get_mut()
                 .await
@@ -279,9 +280,12 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        if let Some(tray_status) = self.prop_cache.status_changed(&self.tray) {
-            StatusNotifierItem::new_status(sni_obj.signal_context(), &tray_status.to_string())
-                .await?;
+        if self.status_changed() {
+            StatusNotifierItem::new_status(
+                sni_obj.signal_context(),
+                &self.get_status().to_string(),
+            )
+            .await?;
             menu_obj
                 .get_mut()
                 .await
@@ -289,7 +293,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        if self.prop_cache.icon_theme_path_changed(&self.tray) {
+        if self.icon_theme_path_changed() {
             sni_obj
                 .get_mut()
                 .await
@@ -302,7 +306,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        if self.prop_cache.category_changed(&self.tray) {
+        if self.category_changed() {
             sni_obj
                 .get_mut()
                 .await
@@ -310,7 +314,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 .await?;
         }
 
-        if self.prop_cache.window_id_changed(&self.tray) {
+        if self.window_id_changed() {
             sni_obj
                 .get_mut()
                 .await
@@ -320,19 +324,22 @@ impl<T: Tray + Send + 'static> Service<T> {
 
         // TODO: assert the id is consistent
 
-        if self.prop_cache.title_changed(&self.tray) {
+        if self.title_changed() {
             StatusNotifierItem::new_title(sni_obj.signal_context()).await?;
         }
-        if self.prop_cache.icon_changed(&self.tray) {
+        if self.icon_name_changed() || self.icon_pixmap_changed() {
             StatusNotifierItem::new_icon(sni_obj.signal_context()).await?;
         }
-        if self.prop_cache.overlay_icon_changed(&self.tray) {
+        if self.overlay_icon_name_changed() || self.overlay_icon_pixmap_changed() {
             StatusNotifierItem::new_overlay_icon(sni_obj.signal_context()).await?;
         }
-        if self.prop_cache.attention_icon_changed(&self.tray) {
+        if self.attention_icon_name_changed()
+            || self.attention_icon_pixmap_changed()
+            || self.attention_movie_name_changed()
+        {
             StatusNotifierItem::new_attention_icon(sni_obj.signal_context()).await?;
         }
-        if self.prop_cache.tool_tip_changed(&self.tray) {
+        if self.tool_tip_changed() {
             StatusNotifierItem::new_tool_tip(sni_obj.signal_context()).await?;
         }
         Ok(())
@@ -554,105 +561,63 @@ impl<T: Tray + Send + 'static> Service<T> {
     }
 }
 
-struct PropertiesCache {
-    category: crate::Category,
-    title: u64,
-    status: crate::Status,
-    window_id: i32,
-    icon_theme_path: u64,
-    icon: u64,
-    overlay_icon: u64,
-    attention_icon: u64,
-    tool_tip: u64,
-    text_direction: crate::TextDirection,
+macro_rules! def_properties_monitor {
+    ($( $name:ident : $type:path ),+) => {
+        struct PropertiesMonitor {
+            $($name: u64),*
+        }
+
+        impl PropertiesMonitor {
+            fn new<T: Tray>(tray: &T) -> Self {
+                Self {
+                    $($name: hash_of(tray.$name())),*
+                }
+            }
+        }
+        impl<T: Tray + Send + 'static> Service<T> {
+            paste! {
+                $(
+                    /// generated by def_properties_monitor
+                    fn [<$name _changed>](&mut self) -> bool {
+                        let old = self.prop_monitor.$name;
+                        self.prop_monitor.$name = hash_of(self.tray.$name());
+                        self.prop_monitor.$name != old
+                    }
+                    /// generated by def_properties_monitor
+                    fn [<get_ $name>](&mut self) -> $type {
+                        let r = self.tray.$name();
+                        self.prop_monitor.$name = hash_of(self.tray.$name());
+                        r
+                    }
+                )*
+            }
+        }
+    }
 }
 
-impl PropertiesCache {
-    fn new<T: Tray>(tray: &T) -> Self {
-        PropertiesCache {
-            category: tray.category(),
-            title: hash_of(tray.title()),
-            status: tray.status(),
-            window_id: tray.window_id(),
-            icon_theme_path: hash_of(tray.icon_theme_path()),
-            icon: hash_of((tray.icon_name(), tray.icon_pixmap())),
-            overlay_icon: hash_of((tray.overlay_icon_name(), tray.overlay_icon_pixmap())),
-            attention_icon: hash_of((
-                tray.attention_icon_name(),
-                tray.attention_icon_pixmap(),
-                tray.attention_movie_name(),
-            )),
-            tool_tip: hash_of(tray.tool_tip()),
-            text_direction: tray.text_direction(),
-        }
-    }
+// dbus properties monitor, tracks hash of properties
+def_properties_monitor! {
+    category: crate::Category,
+    title: String,
+    status: crate::Status,
+    window_id: i32,
+    icon_theme_path: String,
+    icon_name: String,
+    icon_pixmap: Vec<crate::Icon>,
+    overlay_icon_name: String,
+    overlay_icon_pixmap: Vec<crate::Icon>,
+    attention_icon_name: String,
+    attention_icon_pixmap: Vec<crate::Icon>,
+    attention_movie_name: String,
+    tool_tip: crate::ToolTip,
+    text_direction: crate::TextDirection
+}
 
-    fn category_changed<T: Tray>(&mut self, t: &T) -> bool {
-        let old = self.category;
-        self.category = t.category();
-        self.category != old
-    }
-
-    fn title_changed<T: Tray>(&mut self, t: &T) -> bool {
-        let old = self.title;
-        self.title = hash_of(t.title());
-        self.title != old
-    }
-
-    fn status_changed<T: Tray>(&mut self, t: &T) -> Option<crate::Status> {
-        let v = t.status();
-        if self.status != v {
-            self.status = v;
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    fn window_id_changed<T: Tray>(&mut self, t: &T) -> bool {
-        let old = self.window_id;
-        self.window_id = t.window_id();
-        self.window_id != old
-    }
-
-    fn icon_theme_path_changed<T: Tray>(&mut self, t: &T) -> bool {
-        let old = self.icon_theme_path;
-        self.icon_theme_path = hash_of(&t.icon_theme_path());
-        self.icon_theme_path != old
-    }
-
-    fn icon_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let old = self.icon;
-        self.icon = hash_of((tray.icon_name(), tray.icon_pixmap()));
-        self.icon != old
-    }
-
-    fn overlay_icon_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let old = self.overlay_icon;
-        self.overlay_icon = hash_of((tray.overlay_icon_name(), tray.overlay_icon_pixmap()));
-        self.overlay_icon != old
-    }
-
-    fn attention_icon_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let old = self.attention_icon;
-        self.attention_icon = hash_of((
-            tray.attention_icon_name(),
-            tray.attention_icon_pixmap(),
-            tray.attention_movie_name(),
-        ));
-        self.attention_icon != old
-    }
-
-    fn tool_tip_changed<T: Tray>(&mut self, tray: &T) -> bool {
-        let old = self.tool_tip;
-        self.tool_tip = hash_of(tray.tool_tip());
-        self.tool_tip != old
-    }
-
-    fn text_direction_changed<T: Tray>(&mut self, t: &T) -> bool {
-        let old = self.text_direction;
-        self.text_direction = t.text_direction();
-        self.text_direction != old
+impl<T: Tray + Send + 'static> Service<T> {
+    // skip PropertiesMonitor,
+    // id is a const property in Service lifetime
+    fn get_id(&mut self) -> String {
+        self.tray.id()
     }
 }
 

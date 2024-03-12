@@ -21,7 +21,7 @@ use zbus::zvariant::{OwnedValue, Str, Value};
 // }
 
 /// Direction of texts
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TextDirection {
     LeftToRight,
     RightToLeft,

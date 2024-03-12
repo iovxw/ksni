@@ -23,6 +23,7 @@ async-io = [
 ]
 
 [dependencies]
+paste = "1"
 thiserror = "1"
 futures-util = "0.3"
 zbus = { version = "4", default-features = false }

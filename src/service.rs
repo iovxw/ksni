@@ -347,12 +347,12 @@ impl<T: Tray + Send + 'static> Service<T> {
 
     async fn update_menu(&mut self) -> zbus::Result<()> {
         let new_menu = menu::menu_flatten(self.tray.menu());
-        let old_menu = &self.menu_cache;
         let mut all_updated_props = Vec::new();
         let mut all_removed_props = Vec::new();
         let default = crate::menu::RawMenuItem::default();
         let mut layout_updated = false;
-        for (index, (old, new)) in old_menu
+        for (index, (old, new)) in self
+            .menu_cache
             .iter()
             .chain(std::iter::repeat(&(default, vec![])))
             .zip(new_menu.iter())
@@ -384,7 +384,7 @@ impl<T: Tray + Send + 'static> Service<T> {
             // The layout has been changed, bump ID offset to invalidate all items,
             // which is required to avoid unexpected behaviors on some system tray
             self.revision += 1;
-            self.item_id_offset += old_menu.len() as i32;
+            self.item_id_offset += self.menu_cache.len() as i32;
             DbusMenu::layout_updated(menu_obj.signal_context(), self.revision, 0).await?;
         } else if !all_updated_props.is_empty() || !all_removed_props.is_empty() {
             DbusMenu::items_properties_updated(

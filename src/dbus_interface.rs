@@ -1,16 +1,16 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
-use zbus::SignalContext;
+use zbus::{Connection, SignalContext};
 
-use crate::compat::{mpsc, oneshot};
-use crate::{Icon, ToolTip};
+use crate::compat::Mutex;
+use crate::service::Service;
+use crate::{Icon, ToolTip, Tray};
 
 pub const SNI_PATH: &str = "/StatusNotifierItem";
 pub const MENU_PATH: &str = "/MenuBar";
-
-type ReplySender<T> = oneshot::Sender<zbus::fdo::Result<T>>;
 
 #[zbus::proxy(
     interface = "org.kde.StatusNotifierWatcher",
@@ -46,114 +46,91 @@ trait StatusNotifierWatcher {
     fn status_notifier_host_unregistered(&self) -> zbus::Result<()>;
 }
 
-#[derive(Debug)]
-pub enum SniMessage {
-    Activate(i32, i32),
-    SecondaryActivate(i32, i32),
-    Scroll(i32, String),
-    GetDbusProperty(SniProperty),
-}
+pub struct StatusNotifierItem<T>(Arc<Mutex<Service<T>>>);
 
-#[derive(Debug)]
-pub enum SniProperty {
-    Category(ReplySender<String>),
-    Id(ReplySender<String>),
-    Title(ReplySender<String>),
-    Status(ReplySender<String>),
-    WindowId(ReplySender<i32>),
-    IconThemePath(ReplySender<String>),
-    IconName(ReplySender<String>),
-    IconPixmap(ReplySender<Vec<Icon>>),
-    OverlayIconName(ReplySender<String>),
-    OverlayIconPixmap(ReplySender<Vec<Icon>>),
-    AttentionIconName(ReplySender<String>),
-    AttentionIconPixmap(ReplySender<Vec<Icon>>),
-    AttentionMovieName(ReplySender<String>),
-    ToolTip(ReplySender<ToolTip>),
-}
-
-pub struct StatusNotifierItem {
-    sender: mpsc::UnboundedSender<SniMessage>,
-}
-
-impl StatusNotifierItem {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<SniMessage>) {
-        let (tx, rx) = mpsc::unbounded_channel();
-        (StatusNotifierItem { sender: tx }, rx)
-    }
-
-    fn send(&self, message: SniMessage) -> zbus::fdo::Result<()> {
-        self.sender
-            .send(message)
-            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        Ok(())
-    }
-
-    async fn get<T>(
-        &self,
-        property: SniProperty,
-        rx: oneshot::Receiver<zbus::fdo::Result<T>>,
-    ) -> zbus::fdo::Result<T> {
-        self.send(SniMessage::GetDbusProperty(property))?;
-        rx.await
-            .unwrap_or_else(|e| Err(zbus::fdo::Error::Failed(e.to_string())))
+impl<T> StatusNotifierItem<T> {
+    pub fn new(service: Arc<Mutex<Service<T>>>) -> Self {
+        Self(service)
     }
 }
 
 #[zbus::interface(name = "org.kde.StatusNotifierItem")]
-impl StatusNotifierItem {
-    // methods
+impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
+    // show a self rendered menu, not supported by ksni
     fn context_menu(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
+        Err(zbus::fdo::Error::UnknownMethod(
+            "Not supported, please use `menu`".into(),
+        ))
+    }
+
+    async fn activate(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        x: i32,
+        y: i32,
+    ) -> zbus::fdo::Result<()> {
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        service.call_activate(conn, x, y).await;
         Ok(())
     }
 
-    fn activate(&self, x: i32, y: i32) -> zbus::fdo::Result<()> {
-        self.send(SniMessage::Activate(x, y))
+    async fn secondary_activate(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        x: i32,
+        y: i32,
+    ) -> zbus::fdo::Result<()> {
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        service.call_secondary_activate(conn, x, y).await;
+        Ok(())
     }
 
-    fn secondary_activate(&self, x: i32, y: i32) -> zbus::fdo::Result<()> {
-        self.send(SniMessage::SecondaryActivate(x, y))
-    }
-
-    fn scroll(&self, delta: i32, dir: &str) -> zbus::fdo::Result<()> {
-        self.send(SniMessage::Scroll(delta, dir.to_string()))
+    async fn scroll(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        delta: i32,
+        dir: &str,
+    ) -> zbus::fdo::Result<()> {
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        service.call_scroll(conn, delta, dir).await;
+        Ok(())
     }
 
     // properties
     #[zbus(property)]
     async fn category(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::Category(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_category().to_string())
     }
 
     #[zbus(property)]
     async fn id(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::Id(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_id())
     }
 
     #[zbus(property)]
     async fn title(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::Title(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_title())
     }
 
     #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::Status(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_status().to_string())
     }
 
     #[zbus(property)]
     async fn window_id(&self) -> zbus::fdo::Result<i32> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::WindowId(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_window_id())
     }
 
     #[zbus(property)]
     async fn icon_theme_path(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::IconThemePath(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_icon_theme_path())
     }
 
     #[zbus(property)]
@@ -168,50 +145,50 @@ impl StatusNotifierItem {
 
     #[zbus(property)]
     async fn icon_name(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::IconName(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_icon_name())
     }
 
     #[zbus(property)]
     async fn icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::IconPixmap(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_icon_pixmap())
     }
 
     #[zbus(property)]
     async fn overlay_icon_name(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::OverlayIconName(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_overlay_icon_name())
     }
 
     #[zbus(property)]
     async fn overlay_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::OverlayIconPixmap(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_overlay_icon_pixmap())
     }
 
     #[zbus(property)]
     async fn attention_icon_name(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::AttentionIconName(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_attention_icon_name())
     }
 
     #[zbus(property)]
     async fn attention_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::AttentionIconPixmap(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_attention_icon_pixmap())
     }
 
     #[zbus(property)]
     async fn attention_movie_name(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::AttentionMovieName(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_attention_movie_name())
     }
 
     #[zbus(property)]
     async fn tool_tip(&self) -> zbus::fdo::Result<ToolTip> {
-        let (tx, rx) = oneshot::channel();
-        self.get(SniProperty::ToolTip(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_tool_tip())
     }
 
     // signals
@@ -241,66 +218,16 @@ pub struct LayoutItem {
     pub children: Vec<OwnedValue>,
 }
 
-#[derive(Debug)]
-pub enum DbusMenuMessage {
-    GetLayout(i32, i32, Vec<String>, ReplySender<(u32, LayoutItem)>),
-    GetGroupProperties(
-        Vec<i32>,
-        Vec<String>,
-        ReplySender<Vec<(i32, HashMap<String, OwnedValue>)>>,
-    ),
-    GetProperty(i32, String, ReplySender<OwnedValue>),
-    Event(i32, String, OwnedValue, u32, ReplySender<()>),
-    EventGroup(Vec<(i32, String, OwnedValue, u32)>, ReplySender<Vec<i32>>),
-    GetDbusProperty(DbusMenuProperty),
-}
+pub struct DbusMenu<T>(Arc<Mutex<Service<T>>>);
 
-#[derive(Debug)]
-pub enum DbusMenuProperty {
-    TextDirection(ReplySender<String>),
-    Status(ReplySender<String>),
-    IconThemePath(ReplySender<Vec<String>>),
-}
-
-pub struct DbusMenu {
-    sender: mpsc::UnboundedSender<DbusMenuMessage>,
-}
-
-impl DbusMenu {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<DbusMenuMessage>) {
-        let (tx, rx) = mpsc::unbounded_channel();
-        (DbusMenu { sender: tx }, rx)
-    }
-
-    fn send(&self, message: DbusMenuMessage) -> zbus::fdo::Result<()> {
-        self.sender
-            .send(message)
-            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        Ok(())
-    }
-
-    async fn send_recv<T>(
-        &self,
-        message: DbusMenuMessage,
-        rx: oneshot::Receiver<zbus::fdo::Result<T>>,
-    ) -> zbus::fdo::Result<T> {
-        self.send(message)?;
-        rx.await
-            .unwrap_or_else(|e| Err(zbus::fdo::Error::Failed(e.to_string())))
-    }
-
-    async fn get<T>(
-        &self,
-        property: DbusMenuProperty,
-        rx: oneshot::Receiver<zbus::fdo::Result<T>>,
-    ) -> zbus::fdo::Result<T> {
-        self.send_recv(DbusMenuMessage::GetDbusProperty(property), rx)
-            .await
+impl<T> DbusMenu<T> {
+    pub fn new(service: Arc<Mutex<Service<T>>>) -> Self {
+        Self(service)
     }
 }
 
 #[zbus::interface(name = "com.canonical.dbusmenu")]
-impl DbusMenu {
+impl<T: Tray + Send + 'static> DbusMenu<T> {
     // methods
     async fn get_layout(
         &self,
@@ -308,12 +235,18 @@ impl DbusMenu {
         recursion_depth: i32,
         property_names: Vec<String>,
     ) -> zbus::fdo::Result<(u32, LayoutItem)> {
-        let (tx, rx) = oneshot::channel();
-        self.send_recv(
-            DbusMenuMessage::GetLayout(parent_id, recursion_depth, property_names, tx),
-            rx,
-        )
-        .await
+        let service = self.0.lock().await; // do NOT use any self methods after this
+        let tree = service.gen_dbusmenu_tree(
+            parent_id,
+            if recursion_depth < 0 {
+                None
+            } else {
+                Some(recursion_depth as usize)
+            },
+            property_names,
+        );
+        tree.map(|tree| (service.revision, tree))
+            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("parentId not found".to_string()))
     }
 
     async fn get_group_properties(
@@ -321,42 +254,71 @@ impl DbusMenu {
         ids: Vec<i32>,
         property_names: Vec<String>,
     ) -> zbus::fdo::Result<Vec<(i32, HashMap<String, OwnedValue>)>> {
-        let (tx, rx) = oneshot::channel();
-        self.send_recv(
-            DbusMenuMessage::GetGroupProperties(ids, property_names, tx),
-            rx,
-        )
-        .await
+        let service = self.0.lock().await; // do NOT use any self methods after this
+        let items = ids
+            .into_iter()
+            .filter_map(|id| service.get_menu_item(id, &property_names).map(|r| (id, r)))
+            .filter(|r| !r.1.is_empty())
+            .collect();
+        // TODO: return an error if items is empty
+        Ok(items)
     }
 
     async fn get_property(&self, id: i32, name: String) -> zbus::fdo::Result<OwnedValue> {
-        let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::GetProperty(id, name, tx), rx)
-            .await
+        let service = self.0.lock().await; // do NOT use any self methods after this
+        service
+            .get_menu_item(id, &[name])
+            .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".into()))
+            .map(|map| map.into_iter().next().map(|entry| entry.1))
+            .transpose()
+            .unwrap_or_else(|| Err(zbus::fdo::Error::InvalidArgs("property not found".into())))
     }
 
     async fn event(
         &self,
+        #[zbus(connection)] conn: &Connection,
         id: i32,
         event_id: String,
         data: OwnedValue,
         timestamp: u32,
     ) -> zbus::fdo::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.send_recv(
-            DbusMenuMessage::Event(id, event_id, data, timestamp, tx),
-            rx,
-        )
-        .await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        service
+            .event(conn, true, id, &event_id, data, timestamp)
+            .await
     }
 
     async fn event_group(
         &self,
+        #[zbus(connection)] conn: &Connection,
         events: Vec<(i32, String, OwnedValue, u32)>,
     ) -> zbus::fdo::Result<Vec<i32>> {
-        let (tx, rx) = oneshot::channel();
-        self.send_recv(DbusMenuMessage::EventGroup(events, tx), rx)
-            .await
+        if events.is_empty() {
+            return Err(zbus::fdo::Error::InvalidArgs("Empty events".into()));
+        }
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let events_len = events.len();
+        let last_id = events
+            .last()
+            .expect("`events.is_empty` should been checked")
+            .0;
+        let mut not_found = Vec::with_capacity(events_len);
+        for (id, event_id, data, timestamp) in events {
+            if service
+                .event(conn, id == last_id, id, &event_id, data, timestamp)
+                .await
+                .is_err()
+            {
+                not_found.push(id);
+            }
+        }
+        if not_found.len() == events_len {
+            Err(zbus::fdo::Error::InvalidArgs(
+                "None of the id in the events can be found".into(),
+            ))
+        } else {
+            Ok(not_found)
+        }
     }
 
     async fn about_to_show(&self) -> zbus::fdo::Result<bool> {
@@ -376,20 +338,28 @@ impl DbusMenu {
 
     #[zbus(property)]
     async fn text_direction(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(DbusMenuProperty::TextDirection(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_text_direction().to_string())
     }
 
     #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<String> {
-        let (tx, rx) = oneshot::channel();
-        self.get(DbusMenuProperty::Status(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let status = match service.get_status() {
+            crate::tray::Status::Active | crate::tray::Status::Passive => {
+                crate::menu::Status::Normal
+            }
+            crate::tray::Status::NeedsAttention => crate::menu::Status::Notice,
+        };
+        Ok(status.to_string())
     }
 
     #[zbus(property)]
     async fn icon_theme_path(&self) -> zbus::fdo::Result<Vec<String>> {
-        let (tx, rx) = oneshot::channel();
-        self.get(DbusMenuProperty::IconThemePath(tx), rx).await
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let path = service.get_icon_theme_path();
+        let path = if path.is_empty() { vec![] } else { vec![path] };
+        Ok(path)
     }
 
     // signals

@@ -2,6 +2,12 @@
 compile_error!(r#"Either "tokio" (default) or "async-io" must be enabled."#);
 
 #[cfg(feature = "tokio")]
+pub use tokio::sync::Mutex;
+
+#[cfg(feature = "async-io")]
+pub use async_lock::Mutex;
+
+#[cfg(feature = "tokio")]
 pub use tokio::select;
 
 #[cfg(feature = "async-io")]

@@ -98,9 +98,9 @@ impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
 
     // properties
     #[zbus(property)]
-    async fn category(&self) -> zbus::fdo::Result<String> {
+    async fn category(&self) -> zbus::fdo::Result<crate::Category> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_category().to_string())
+        Ok(service.get_category())
     }
 
     #[zbus(property)]
@@ -116,9 +116,9 @@ impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
     }
 
     #[zbus(property)]
-    async fn status(&self) -> zbus::fdo::Result<String> {
+    async fn status(&self) -> zbus::fdo::Result<crate::Status> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_status().to_string())
+        Ok(service.get_status())
     }
 
     #[zbus(property)]
@@ -337,13 +337,13 @@ impl<T: Tray + Send + 'static> DbusMenu<T> {
     }
 
     #[zbus(property)]
-    async fn text_direction(&self) -> zbus::fdo::Result<String> {
+    async fn text_direction(&self) -> zbus::fdo::Result<crate::TextDirection> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_text_direction().to_string())
+        Ok(service.get_text_direction())
     }
 
     #[zbus(property)]
-    async fn status(&self) -> zbus::fdo::Result<String> {
+    async fn status(&self) -> zbus::fdo::Result<crate::menu::Status> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
         let status = match service.get_status() {
             crate::tray::Status::Active | crate::tray::Status::Passive => {
@@ -351,7 +351,7 @@ impl<T: Tray + Send + 'static> DbusMenu<T> {
             }
             crate::tray::Status::NeedsAttention => crate::menu::Status::Notice,
         };
-        Ok(status.to_string())
+        Ok(status)
     }
 
     #[zbus(property)]

@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fmt;
 use zbus::zvariant::{Type, Value};
 
 /// Category of this item.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Type, Serialize)]
+#[zvariant(signature = "s")]
 pub enum Category {
     /// The item describes the status of a generic application, for instance
     /// the current state of a media player. In the case where the category of
@@ -23,20 +24,23 @@ pub enum Category {
     Hardware,
 }
 
+// The Value dervie macro can only handle `dict` or `a{sv}` values
+// so we impl it manually
+impl From<Category> for Value<'_> {
+    fn from(value: Category) -> Self {
+        value.to_string().into()
+    }
+}
+
 impl fmt::Display for Category {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let r = match *self {
-            Category::ApplicationStatus => "ApplicationStatus",
-            Category::Communications => "Communications",
-            Category::SystemServices => "SystemServices",
-            Category::Hardware => "Hardware",
-        };
-        f.write_str(r)
+        self.serialize(f)
     }
 }
 
 /// Status of this item or of the associated application.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Type, Serialize)]
+#[zvariant(signature = "s")]
 pub enum Status {
     /// The item doesn't convey important information to the user, it can be
     /// considered an "idle" status and is likely that visualizations will chose
@@ -52,14 +56,17 @@ pub enum Status {
     NeedsAttention,
 }
 
+// The Value dervie macro can only handle `dict` or `a{sv}` values
+// so we impl it manually
+impl From<Status> for Value<'_> {
+    fn from(value: Status) -> Self {
+        value.to_string().into()
+    }
+}
+
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let r = match *self {
-            Status::Passive => "Passive",
-            Status::Active => "Active",
-            Status::NeedsAttention => "NeedsAttention",
-        };
-        f.write_str(r)
+        self.serialize(f)
     }
 }
 
@@ -67,7 +74,7 @@ impl fmt::Display for Status {
 ///
 /// That can be visualized for instance by a tooltip (or by any other mean the
 /// visualization consider appropriate.
-#[derive(Clone, Debug, Default, Hash, Type, Value, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Hash, Type, Value, Serialize)]
 pub struct ToolTip {
     /// Freedesktop-compliant name for an icon.
     pub icon_name: String,
@@ -80,28 +87,11 @@ pub struct ToolTip {
     pub description: String,
 }
 
-impl From<ToolTip> for (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
-    fn from(tooltip: ToolTip) -> Self {
-        (
-            tooltip.icon_name,
-            tooltip.icon_pixmap.into_iter().map(Into::into).collect(),
-            tooltip.title,
-            tooltip.description,
-        )
-    }
-}
-
 /// An ARGB32 image
-#[derive(Clone, Debug, Hash, Type, Value, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Type, Value, Serialize)]
 pub struct Icon {
     pub width: i32,
     pub height: i32,
     /// ARGB32 format, network byte order
     pub data: Vec<u8>,
-}
-
-impl From<Icon> for (i32, i32, Vec<u8>) {
-    fn from(icon: Icon) -> Self {
-        (icon.width, icon.height, icon.data)
-    }
 }

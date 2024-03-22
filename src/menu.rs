@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use zbus::zvariant::{OwnedValue, Str, Value};
+use serde::Serialize;
+use zbus::zvariant::{OwnedValue, Str, Type, Value};
 
 // pub struct Properties {
 //     /// Tells if the menus are in a normal state or they believe that they
@@ -21,34 +22,48 @@ use zbus::zvariant::{OwnedValue, Str, Value};
 // }
 
 /// Direction of texts
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Type, Serialize)]
+#[zvariant(signature = "s")]
 pub enum TextDirection {
+    #[serde(rename = "ltr")]
     LeftToRight,
+    #[serde(rename = "rtl")]
     RightToLeft,
+}
+
+// The Value dervie macro can only handle `dict` or `a{sv}` values
+// so we impl it manually
+impl From<TextDirection> for Value<'_> {
+    fn from(value: TextDirection) -> Self {
+        value.to_string().into()
+    }
 }
 
 impl fmt::Display for TextDirection {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let r = match *self {
-            TextDirection::LeftToRight => "ltr",
-            TextDirection::RightToLeft => "rtl",
-        };
-        f.write_str(r)
+        self.serialize(f)
     }
 }
 
+#[derive(Type, Serialize)]
+#[zvariant(signature = "s")]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Status {
     Normal,
     Notice,
 }
 
+// The Value dervie macro can only handle `dict` or `a{sv}` values
+// so we impl it manually
+impl From<Status> for Value<'_> {
+    fn from(value: Status) -> Self {
+        value.to_string().into()
+    }
+}
+
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let r = match *self {
-            Status::Normal => "normal",
-            Status::Notice => "notice",
-        };
-        f.write_str(r)
+        self.serialize(f)
     }
 }
 
@@ -815,6 +830,13 @@ pub(crate) fn menu_flatten<T: 'static>(
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_enums() {
+        assert_eq!(TextDirection::LeftToRight.to_string(), "ltr");
+        assert_eq!(TextDirection::RightToLeft.to_string(), "rtl");
+    }
+
     #[test]
     fn test_menu_flatten() {
         let x: Vec<MenuItem<()>> = vec![

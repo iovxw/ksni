@@ -326,7 +326,6 @@ impl<T: Tray + Send + 'static> DbusMenu<T> {
     }
 
     async fn about_to_show_group(&self) -> zbus::fdo::Result<(Vec<i32>, Vec<i32>)> {
-        // FIXME: the DBus message should set the no reply flag
         Ok(Default::default())
     }
 

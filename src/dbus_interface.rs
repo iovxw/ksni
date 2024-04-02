@@ -9,8 +9,8 @@ use crate::compat::Mutex;
 use crate::service::Service;
 use crate::{Icon, ToolTip, Tray};
 
-pub const SNI_PATH: &str = "/StatusNotifierItem";
-pub const MENU_PATH: &str = "/MenuBar";
+pub const SNI_PATH: ObjectPath = ObjectPath::from_static_str_unchecked("/StatusNotifierItem");
+pub const MENU_PATH: ObjectPath = ObjectPath::from_static_str_unchecked("/MenuBar");
 
 #[zbus::proxy(
     interface = "org.kde.StatusNotifierWatcher",
@@ -135,7 +135,7 @@ impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
 
     #[zbus(property)]
     fn menu(&self) -> zbus::fdo::Result<ObjectPath<'_>> {
-        Ok(ObjectPath::from_static_str(MENU_PATH).expect("MENU_PATH valid"))
+        Ok(MENU_PATH)
     }
 
     #[zbus(property)]

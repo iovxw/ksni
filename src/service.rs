@@ -86,14 +86,18 @@ pub async fn run_async<T: Tray + Send + 'static>(
         .await
         .expect("macro generated dbus Proxy should be valid");
 
-    match snw_object.register_status_notifier_item(&name).await {
+    match snw_object
+        .register_status_notifier_item(&name)
+        .await
+        .map_err(|e| e.into())
+    {
         Ok(()) => service.lock().await.tray.watcher_online(),
-        Err(zbus::Error::FDO(e)) if matches!(&*e, zbus::fdo::Error::ServiceUnknown(_)) => {
+        Err(zbus::fdo::Error::ServiceUnknown(_)) => {
             if !service.lock().await.tray.watcher_offline() {
                 return Ok(());
             }
         }
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     }
 
     let dbus_object = DBusProxy::new(&conn)

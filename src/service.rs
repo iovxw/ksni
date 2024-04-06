@@ -62,34 +62,43 @@ pub async fn run_async<T: Tray + Send + 'static>(
         item_id_offset: 0,
         revision: 0,
     }));
-    let sni_obj = StatusNotifierItem::new(service.clone());
-    let menu_obj = DbusMenu::new(service.clone());
-    let conn = Connection::session().await.unwrap();
     let name = format!(
         "org.kde.StatusNotifierItem-{}-{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::AcqRel)
     );
 
-    conn.object_server().at(SNI_PATH, sni_obj).await?;
-    conn.object_server().at(MENU_PATH, menu_obj).await?;
-    conn.request_name(name.as_str()).await?;
+    let sni_obj = StatusNotifierItem::new(service.clone());
+    let menu_obj = DbusMenu::new(service.clone());
 
-    let snw_object = StatusNotifierWatcherProxy::new(&conn).await?;
-    let register_result = snw_object.register_status_notifier_item(&name).await;
-    if let Err(zbus::Error::FDO(err)) = &register_result {
-        if let zbus::fdo::Error::ServiceUnknown(_) = **err {
+    // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
+    let conn = zbus::connection::Builder::session()?
+        .name(&*name)
+        .expect("validity of name should be ensured by developer")
+        .serve_at(SNI_PATH, sni_obj)
+        .expect("SNI_PATH should be valid")
+        .serve_at(MENU_PATH, menu_obj)
+        .expect("MENU_PATH should be valid")
+        .build()
+        .await?;
+
+    let snw_object = StatusNotifierWatcherProxy::new(&conn)
+        .await
+        .expect("macro generated dbus Proxy should be valid");
+
+    match snw_object.register_status_notifier_item(&name).await {
+        Ok(()) => service.lock().await.tray.watcher_online(),
+        Err(zbus::Error::FDO(e)) if matches!(&*e, zbus::fdo::Error::ServiceUnknown(_)) => {
             if !service.lock().await.tray.watcher_offline() {
                 return Ok(());
             }
-        } else {
-            register_result?;
         }
-    } else {
-        service.lock().await.tray.watcher_online();
+        Err(e) => return Err(e),
     }
 
-    let dbus_object = DBusProxy::new(&conn).await?;
+    let dbus_object = DBusProxy::new(&conn)
+        .await
+        .expect("built-in Proxy should be valid");
     let mut name_changed_signal = dbus_object
         .receive_name_owner_changed_with_args(&[(0, "org.kde.StatusNotifierWatcher")])
         .await?;
@@ -97,17 +106,22 @@ pub async fn run_async<T: Tray + Send + 'static>(
     loop {
         select! {
             Some(event) = name_changed_signal.next() => {
-                 let service = service.lock().await;
-                 match event.args()?.new_owner().as_ref() {
-                     Some(_new_owner) => {
-                         service.tray.watcher_online();
-                         snw_object.register_status_notifier_item(&name).await?;
-                     }
-                     None => {
-                         if !service.tray.watcher_offline() {
-                             break Ok(());
-                         }
-                     }
+                let service = service.lock().await;
+                match event
+                    .args()
+                    .expect("peer should follow the specification")
+                    .new_owner()
+                    .as_ref()
+                {
+                    Some(_new_owner) => {
+                        snw_object.register_status_notifier_item(&name).await?;
+                        service.tray.watcher_online();
+                    }
+                    None => {
+                        if !service.tray.watcher_offline() {
+                            break Ok(());
+                        }
+                    }
                 }
             }
             Some(msg) = client_rx.recv() => {

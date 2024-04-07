@@ -99,37 +99,37 @@ impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
     // properties
     #[zbus(property)]
     async fn category(&self) -> zbus::fdo::Result<crate::Category> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_category())
     }
 
     #[zbus(property)]
     async fn id(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_id())
     }
 
     #[zbus(property)]
     async fn title(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_title())
     }
 
     #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<crate::Status> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_status())
     }
 
     #[zbus(property)]
     async fn window_id(&self) -> zbus::fdo::Result<i32> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_window_id())
     }
 
     #[zbus(property)]
     async fn icon_theme_path(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_icon_theme_path())
     }
 
@@ -145,49 +145,49 @@ impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
 
     #[zbus(property)]
     async fn icon_name(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_icon_name())
     }
 
     #[zbus(property)]
     async fn icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_icon_pixmap())
     }
 
     #[zbus(property)]
     async fn overlay_icon_name(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_overlay_icon_name())
     }
 
     #[zbus(property)]
     async fn overlay_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_overlay_icon_pixmap())
     }
 
     #[zbus(property)]
     async fn attention_icon_name(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_attention_icon_name())
     }
 
     #[zbus(property)]
     async fn attention_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_attention_icon_pixmap())
     }
 
     #[zbus(property)]
     async fn attention_movie_name(&self) -> zbus::fdo::Result<String> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_attention_movie_name())
     }
 
     #[zbus(property)]
     async fn tool_tip(&self) -> zbus::fdo::Result<ToolTip> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_tool_tip())
     }
 
@@ -337,13 +337,13 @@ impl<T: Tray + Send + 'static> DbusMenu<T> {
 
     #[zbus(property)]
     async fn text_direction(&self) -> zbus::fdo::Result<crate::TextDirection> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_text_direction())
     }
 
     #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<crate::menu::Status> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         let status = match service.get_status() {
             crate::tray::Status::Active | crate::tray::Status::Passive => {
                 crate::menu::Status::Normal
@@ -355,7 +355,7 @@ impl<T: Tray + Send + 'static> DbusMenu<T> {
 
     #[zbus(property)]
     async fn icon_theme_path(&self) -> zbus::fdo::Result<Vec<String>> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let service = self.0.lock().await; // do NOT use any self methods after this
         let path = service.get_icon_theme_path();
         let path = if path.is_empty() { vec![] } else { vec![path] };
         Ok(path)

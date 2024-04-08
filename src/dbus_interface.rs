@@ -212,7 +212,7 @@ impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
 }
 
 #[derive(Debug, Default, Type, Serialize, Deserialize, Value, OwnedValue)]
-pub struct LayoutItem {
+pub struct Layout {
     pub id: i32,
     pub properties: HashMap<String, OwnedValue>,
     pub children: Vec<OwnedValue>,
@@ -234,9 +234,9 @@ impl<T: Tray + Send + 'static> DbusMenu<T> {
         parent_id: i32,
         recursion_depth: i32,
         property_names: Vec<String>,
-    ) -> zbus::fdo::Result<(u32, LayoutItem)> {
+    ) -> zbus::fdo::Result<(u32, Layout)> {
         let service = self.0.lock().await; // do NOT use any self methods after this
-        let tree = service.gen_dbusmenu_tree(
+        let tree = service.build_layout(
             parent_id,
             if recursion_depth < 0 {
                 None

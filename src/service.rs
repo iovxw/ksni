@@ -11,7 +11,7 @@ use zbus::Connection;
 
 use crate::compat::{mpsc, Mutex};
 use crate::dbus_interface::{
-    DbusMenu, LayoutItem, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_PATH, SNI_PATH,
+    DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_PATH, SNI_PATH,
 };
 
 use crate::compat::select;
@@ -53,11 +53,11 @@ pub async fn run_async<T: Tray + Send + 'static>(
     tray: T,
     mut client_rx: mpsc::UnboundedReceiver<ClientRequest<T>>,
 ) -> zbus::Result<()> {
-    let menu_cache = menu::menu_flatten(T::menu(&tray));
+    let flattened_menu = menu::menu_flatten(T::menu(&tray));
     let prop_monitor = PropertiesMonitor::new(&tray);
     let service = Arc::new(Mutex::new(Service {
         tray,
-        menu_cache,
+        flattened_menu,
         prop_monitor,
         item_id_offset: 0,
         revision: 0,
@@ -146,7 +146,7 @@ pub async fn run_async<T: Tray + Send + 'static>(
 
 pub(crate) struct Service<T> {
     tray: T,
-    menu_cache: Vec<(menu::RawMenuItem<T>, Vec<usize>)>,
+    flattened_menu: Vec<(menu::RawMenuItem<T>, Vec<usize>)>,
     prop_monitor: PropertiesMonitor,
     item_id_offset: i32,
     pub revision: u32,
@@ -243,7 +243,7 @@ impl<T: Tray + Send + 'static> Service<T> {
         let default = crate::menu::RawMenuItem::default();
         let mut layout_updated = false;
         for (index, (old, new)) in self
-            .menu_cache
+            .flattened_menu
             .iter()
             .chain(std::iter::repeat(&(default, vec![])))
             .zip(new_menu.iter())
@@ -274,7 +274,7 @@ impl<T: Tray + Send + 'static> Service<T> {
             // The layout has been changed, bump ID offset to invalidate all items,
             // which is required to avoid unexpected behaviors on some system tray
             self.revision += 1;
-            self.item_id_offset += self.menu_cache.len() as i32;
+            self.item_id_offset += self.flattened_menu.len() as i32;
             DbusMenu::<T>::layout_updated(menu_obj.signal_context(), self.revision, 0).await?;
         } else if !all_updated_props.is_empty() || !all_removed_props.is_empty() {
             DbusMenu::<T>::items_properties_updated(
@@ -286,7 +286,7 @@ impl<T: Tray + Send + 'static> Service<T> {
         }
         // Always update menu_cache since `on_clicked` can be updated
         // and we can not detect that
-        self.menu_cache = new_menu;
+        self.flattened_menu = new_menu;
         Ok(())
     }
 
@@ -297,7 +297,7 @@ impl<T: Tray + Send + 'static> Service<T> {
 
     // Return None if item not exists
     fn id2index(&self, id: i32) -> Option<usize> {
-        let number_of_items = self.menu_cache.len();
+        let number_of_items = self.flattened_menu.len();
         let offset = self.item_id_offset;
         if id == 0 && number_of_items > 0 {
             // ID of the root item is always 0
@@ -330,77 +330,70 @@ impl<T: Tray + Send + 'static> Service<T> {
 
 // dbus methods
 impl<T: Tray + Send + 'static> Service<T> {
-    // Return None if parent_id not found
-    pub fn gen_dbusmenu_tree(
+    /// Build a menu tree from flattened menu
+    /// Return None if parent_id not found
+    pub fn build_layout(
         &self,
         parent_id: i32,
         recursion_depth: Option<usize>,
         property_names: Vec<String>,
-    ) -> Option<LayoutItem> {
-        let parent_index = self.id2index(parent_id)?;
+    ) -> Option<Layout> {
+        let root = self.id2index(parent_id)?;
 
-        // The type is Vec<Option<id, properties, Vec<submenu>, Vec<submenu_index>>>
-        let mut x: Vec<
-            Option<(
-                i32,
-                HashMap<String, OwnedValue>,
-                Vec<OwnedValue>,
-                Vec<usize>,
-            )>,
-        > = self
-            .menu_cache
+        let mut items: Vec<Option<(Layout, Vec<usize>)>> = self
+            .flattened_menu
             .iter()
             .enumerate()
             .map(|(index, (item, submenu))| {
                 (
-                    self.index2id(index),
-                    item.to_dbus_map(&property_names),
-                    Vec::with_capacity(submenu.len()),
+                    Layout {
+                        id: self.index2id(index),
+                        properties: item.to_dbus_map(&property_names),
+                        children: Vec::with_capacity(submenu.len()),
+                    },
                     submenu.clone(),
                 )
             })
             .map(Some)
             .collect();
-        let mut stack = vec![parent_index];
+        let mut stack = vec![root];
 
+        // depth first
         while let Some(current) = stack.pop() {
-            let submenu_indexes = &mut x[current].as_mut().unwrap().3;
-            if submenu_indexes.is_empty() {
-                let c = x[current].as_mut().unwrap();
-                if !c.2.is_empty() {
-                    c.1.insert(
+            let (layout, pending_children) = &mut items[current]
+                .as_mut()
+                .expect("stack pointer should always point to a valid item");
+            if pending_children.is_empty() {
+                if !layout.children.is_empty() {
+                    layout.properties.insert(
                         "children-display".into(),
                         Str::from_static("submenu").into(),
                     );
                 }
+                // if there's a parent, move current to parent's children
                 if let Some(parent) = stack.pop() {
-                    x.push(None);
-                    let item = x.swap_remove(current).unwrap();
+                    let current = std::mem::replace(&mut items[current], None);
+                    let layout = current.expect("should have been unwrapped once already").0;
                     stack.push(parent);
-                    x[parent].as_mut().unwrap().2.push(
-                        LayoutItem {
-                            id: item.0,
-                            properties: item.1,
-                            children: item.2,
-                        }
-                        .try_into()
-                        .expect("unreachable: LayoutItem should not contain any fd"),
-                    );
+                    items[parent]
+                        .as_mut()
+                        .unwrap()
+                        .0
+                        .children
+                        .push(layout.try_into().expect(
+                            "Layout should not contain anything that can not be formatted as Value",
+                        ));
                 }
             } else {
                 stack.push(current);
-                let sub = submenu_indexes.remove(0);
+                let child = pending_children.remove(0);
                 if recursion_depth.map_or(true, |depth| depth + 1 >= stack.len()) {
-                    stack.push(sub);
+                    stack.push(child);
                 }
             }
         }
-        let resp = x.remove(parent_index)?;
-        Some(LayoutItem {
-            id: resp.0,
-            properties: resp.1,
-            children: resp.2,
-        })
+        let root_item = items.remove(root)?;
+        Some(root_item.0)
     }
 
     pub fn get_menu_item(
@@ -409,7 +402,7 @@ impl<T: Tray + Send + 'static> Service<T> {
         property_filter: &[String],
     ) -> Option<HashMap<String, OwnedValue>> {
         self.id2index(id)
-            .map(|index| self.menu_cache[index].0.to_dbus_map(property_filter))
+            .map(|index| self.flattened_menu[index].0.to_dbus_map(property_filter))
     }
 
     pub async fn event(
@@ -427,7 +420,7 @@ impl<T: Tray + Send + 'static> Service<T> {
                 let index = self
                     .id2index(id)
                     .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))?;
-                (self.menu_cache[index].0.on_clicked)(&mut self.tray, index);
+                (self.flattened_menu[index].0.on_clicked)(&mut self.tray, index);
                 if do_update {
                     self.update(&conn).await?;
                 }

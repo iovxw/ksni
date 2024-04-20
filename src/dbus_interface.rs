@@ -55,7 +55,7 @@ impl<T> StatusNotifierItem<T> {
 }
 
 #[zbus::interface(name = "org.kde.StatusNotifierItem")]
-impl<T: Tray + Send + 'static> StatusNotifierItem<T> {
+impl<T: Tray> StatusNotifierItem<T> {
     // show a self rendered menu, not supported by ksni
     fn context_menu(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
         Err(zbus::fdo::Error::UnknownMethod(
@@ -227,7 +227,7 @@ impl<T> DbusMenu<T> {
 }
 
 #[zbus::interface(name = "com.canonical.dbusmenu")]
-impl<T: Tray + Send + 'static> DbusMenu<T> {
+impl<T: Tray> DbusMenu<T> {
     // methods
     async fn get_layout(
         &self,

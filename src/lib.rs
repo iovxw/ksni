@@ -18,7 +18,7 @@ use crate::compat::mpsc;
 /// A system tray, implement this to create your tray
 ///
 /// **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
-pub trait Tray: Sized {
+pub trait Tray: Sized + Send + 'static {
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical
     /// representation of the item.

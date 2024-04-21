@@ -1,6 +1,15 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use zbus::zvariant::{Type, Value};
+
+/// Represent the horizontal or vertical orientation of the scroll request
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Type, Deserialize)]
+#[zvariant(signature = "s")]
+#[serde(rename_all = "lowercase")]
+pub enum Orientation {
+    Horizontal,
+    Vertical,
+}
 
 /// Category of this item.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Type, Serialize)]

@@ -89,7 +89,7 @@ impl<T: Tray> StatusNotifierItem<T> {
         &self,
         #[zbus(connection)] conn: &Connection,
         delta: i32,
-        dir: &str,
+        dir: crate::Orientation,
     ) -> zbus::fdo::Result<()> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
         service.call_scroll(conn, delta, dir).await;

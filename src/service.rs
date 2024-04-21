@@ -440,8 +440,8 @@ impl<T: Tray> Service<T> {
         let _ = self.update(conn).await;
     }
 
-    pub async fn call_scroll(&mut self, conn: &Connection, delta: i32, dir: &str) {
-        self.tray.scroll(delta, dir);
+    pub async fn call_scroll(&mut self, conn: &Connection, delta: i32, orientation: crate::Orientation) {
+        self.tray.scroll(delta, orientation);
         let _ = self.update(conn).await;
     }
 }

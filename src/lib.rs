@@ -11,7 +11,7 @@ mod tray;
 #[doc(inline)]
 pub use menu::{MenuItem, TextDirection};
 pub use service::{run_async, spawn};
-pub use tray::{Category, Icon, Status, ToolTip};
+pub use tray::{Category, Icon, Orientation, Status, ToolTip};
 
 use crate::compat::mpsc;
 
@@ -45,12 +45,12 @@ pub trait Tray: Sized + Send + 'static {
     ///
     /// The delta parameter represent the amount of scroll, the orientation
     /// parameter represent the horizontal or vertical orientation of the scroll
-    /// request and its legal values are horizontal and vertical.
-    fn scroll(&mut self, _delta: i32, _dir: &str) {}
+    /// request.
+    fn scroll(&mut self, _delta: i32, _orientation: Orientation) {}
 
     /// Describes the category of this item.
     fn category(&self) -> Category {
-        tray::Category::ApplicationStatus
+        Category::ApplicationStatus
     }
 
     /// It's a name that should be unique for this application and consistent
@@ -67,7 +67,7 @@ pub trait Tray: Sized + Send + 'static {
 
     /// Describes the status of this item or of the associated application.
     fn status(&self) -> Status {
-        tray::Status::Active
+        Status::Active
     }
 
     // NOTE: u32 in org.freedesktop.StatusNotifierItem
@@ -143,7 +143,7 @@ pub trait Tray: Sized + Send + 'static {
     /// Represents the way the text direction of the application.  This
     /// allows the server to handle mismatches intelligently.
     fn text_direction(&self) -> TextDirection {
-        menu::TextDirection::LeftToRight
+        TextDirection::LeftToRight
     }
 
     /// The menu that you want to display

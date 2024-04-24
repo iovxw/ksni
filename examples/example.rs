@@ -1,4 +1,4 @@
-use ksni;
+use ksni::TrayMethods; // for the spawn method
 
 #[derive(Debug)]
 struct MyTray {
@@ -90,20 +90,19 @@ impl ksni::Tray for MyTray {
     }
 }
 
-fn main() {
-    let handle = ksni::spawn(MyTray {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    let tray = MyTray {
         selected_option: 0,
         checked: false,
-    })
-    .unwrap();
+    };
+    let handle = tray.spawn().await.unwrap();
 
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    // We can modify the handle
-    let _ = handle.update(|tray: &mut MyTray| {
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    // We can modify the tray
+    handle.update(|tray: &mut MyTray| {
         tray.checked = true;
-    });
+    }).await;
     // Run forever
-    loop {
-        std::thread::park();
-    }
+    std::future::pending().await
 }

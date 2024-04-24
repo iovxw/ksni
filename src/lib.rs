@@ -10,10 +10,9 @@ mod tray;
 
 #[doc(inline)]
 pub use menu::{MenuItem, TextDirection};
-pub use service::{run_async, spawn};
 pub use tray::{Category, Icon, Orientation, Status, ToolTip};
 
-use crate::compat::mpsc;
+use crate::compat::{mpsc, oneshot};
 
 /// A system tray, implement this to create your tray
 ///
@@ -159,19 +158,110 @@ pub trait Tray: Sized + Send + 'static {
     /// You can setup a fallback tray here
     ///
     /// Return `false` to shutdown the tray service
-    fn watcher_offline(&self) -> bool {
+    #[allow(
+        unused_variables,
+        reason = "the default impl don't use this parameter, but it should be used by user, so keep the name without _ for autocomplete"
+    )]
+    fn watcher_offline(&self, reason: OfflineReason) -> bool {
         true
     }
 }
 
-pub enum ClientRequest<T> {
+/// Why is the tray offline
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum OfflineReason {
+    /// The [StatusNotifierWatcher] just go offline with no reason nor any error
+    ///
+    /// # What could cause this?
+    /// - User restarted the shell in GNOME on Xorg
+    ///   - In this case, the watcher will back online quickly
+    /// - User disabled the tray plugin in their desktop environment
+    ///   - The watcher will back, or never
+    ///   - Consider setting a fallback tray
+    ///
+    /// [StatusNotifierWatcher]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierWatcher/
+    No,
+    /// An error occurred while the tray was running
+    Error(Error),
+}
+
+/// An error while connecting to the [StatusNotifierWatcher]
+///
+/// [StatusNotifierWatcher]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierWatcher/
+#[derive(Debug)]
+// FIXME: impl Error
+#[non_exhaustive]
+pub enum Error {
+    /// D-Bus connection error
+    ///
+    /// Can not connect to the system D-Bus daemon, or encounter an error during the connection.
+    /// The system may not have a D-Bus daemon (which is extremely rare in Linux desktop) or you
+    /// are in a sandbox environment which didn't configured correctly.
+    Dbus(zbus::Error),
+    /// Failed to register to the [StatusNotifierWatcher]
+    ///
+    /// Current desktop environment does not support the [StatusNotifierItem] specification or the
+    /// plugin that adds support is not running.
+    ///
+    /// [StatusNotifierWatcher]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierWatcher/
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
+    Watcher(zbus::fdo::Error),
+    /// The tray was successfully created but can not be displayed due to no [StatusNotifierHost]
+    /// exists
+    ///
+    /// The specification recommend you "should fall back using the Freedesktop System tray specification"
+    ///
+    /// This error can be caused by the program starting earlier than the desktop environment
+    ///
+    /// [StatusNotifierHost]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierHost/
+    WontShow,
+}
+
+// TODO: doc
+pub trait TrayMethods: Tray + private::Sealed {
+    // Get [`Handle`] of a running [`Tray`]
+    //
+    // # Panics
+    //
+    // Will panic if the tray is not running, should only be used in [Tray::menu]
+    // callbacks
+    //fn handle(&self) -> Handle<Self> {
+    //    todo!()
+    //}
+
+    // TODO: doc
+    #[allow(
+        async_fn_in_trait,
+        reason = "the returned `Future` of this method is always `Send`, because `Tray: Send` and `Self: Tray`"
+    )]
+    async fn spawn(self) -> Result<Handle<Self>, Error> {
+        let (handle_tx, handle_rx) = mpsc::unbounded_channel();
+        let f = service::run(self, handle_rx).await?;
+        compat::spawn(f);
+        Ok(Handle { sender: handle_tx })
+    }
+}
+impl<T: Tray> TrayMethods for T {}
+
+fn _assert_spawn_method_returned_future_is_send<T: Tray>(x: T) {
+    fn assert_send<T: Send>(_: T) {}
+    assert_send(x.spawn());
+}
+
+mod private {
+    pub trait Sealed {}
+    impl<T: crate::Tray> Sealed for T {}
+}
+
+pub(crate) enum HandleReuest<T> {
     Update(Box<dyn FnOnce(&mut T) + Send>),
-    Shutdown,
+    Shutdown(oneshot::Sender<()>),
 }
 
 /// Handle to the tray
 pub struct Handle<T> {
-    sender: mpsc::UnboundedSender<ClientRequest<T>>,
+    sender: mpsc::UnboundedSender<HandleReuest<T>>,
 }
 
 impl<T> Handle<T> {
@@ -179,25 +269,33 @@ impl<T> Handle<T> {
     ///
     /// Returns the result of `f`, returns `None` if the tray service
     /// has been shutdown.
-    pub fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(
+    pub async fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(
         &self,
         f: F,
     ) -> Option<R> {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = oneshot::channel();
         self.sender
-            .send(ClientRequest::Update(Box::new(move |t: &mut T| {
+            .send(HandleReuest::Update(Box::new(move |t: &mut T| {
                 let _ = tx.send((f)(t));
             })))
             .ok()?;
-        rx.recv().ok()
+        rx.await.ok()
     }
 
     /// Shutdown the tray service
     ///
-    /// Returns `false` is the tray service has been shutdown.
-    pub fn shutdown(&self) -> bool {
-        // TODO: use a channel to wait for shutdown to finish?
-        self.sender.send(ClientRequest::Shutdown).is_ok()
+    /// The shutdown process will be start immediately,
+    /// even if you don't await the result
+    pub async fn shutdown(&self) {
+        let (tx, rx) = oneshot::channel();
+        if self.sender.send(HandleReuest::Shutdown(tx)).is_ok() {
+            let _ = rx.await;
+        }
+    }
+
+    /// Returns `true` if the tray service has been shutdown
+    pub fn is_closed(&self) -> bool {
+        self.sender.is_closed()
     }
 }
 

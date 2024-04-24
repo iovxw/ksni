@@ -7,6 +7,11 @@ pub use tokio::sync::Mutex;
 #[cfg(feature = "async-io")]
 pub use async_lock::Mutex;
 
+#[cfg(feature = "async-io")]
+pub use async_task::spawn;
+#[cfg(feature = "tokio")]
+pub use tokio::spawn;
+
 #[cfg(feature = "tokio")]
 pub use tokio::select;
 

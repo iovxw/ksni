@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -16,43 +17,14 @@ use crate::dbus_interface::{
 
 use crate::compat::select;
 use crate::menu;
-use crate::{ClientRequest, Handle, Tray};
+use crate::{Error, HandleReuest, OfflineReason, Tray};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-// TODO: don't use zbus result publicly(?)
-pub fn spawn<T: Tray>(tray: T) -> zbus::Result<Handle<T>> {
-    let (client_tx, client_rx) = mpsc::unbounded_channel::<ClientRequest<T>>();
-    std::thread::Builder::new()
-        .name("ksni-tokio".into())
-        .spawn(move || {
-            #[cfg(feature = "tokio")]
-            {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("tokio::new_current_thread()");
-                rt.block_on(async move {
-                    let _ = run_async(tray, client_rx).await;
-                });
-            }
-            #[cfg(feature = "async-io")]
-            {
-                let ex = async_executor::LocalExecutor::new();
-                futures_lite::future::block_on(ex.run(async move {
-                    let _ = run_async(tray, client_rx).await;
-                }));
-            }
-        })
-        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
-
-    Ok(Handle { sender: client_tx })
-}
-
-pub async fn run_async<T: Tray>(
+pub(crate) async fn run<T: Tray>(
     tray: T,
-    mut client_rx: mpsc::UnboundedReceiver<ClientRequest<T>>,
-) -> zbus::Result<()> {
+    mut handle_rx: mpsc::UnboundedReceiver<HandleReuest<T>>,
+) -> Result<impl Future<Output = ()>, Error> {
     let flattened_menu = menu::menu_flatten(T::menu(&tray));
     let prop_monitor = PropertiesMonitor::new(&tray);
     let service = Arc::new(Mutex::new(Service {
@@ -72,7 +44,8 @@ pub async fn run_async<T: Tray>(
     let menu_obj = DbusMenu::new(service.clone());
 
     // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
-    let conn = zbus::connection::Builder::session()?
+    let conn = zbus::connection::Builder::session()
+        .map_err(|e| Error::Dbus(e))?
         .name(&*name)
         .expect("validity of name should be ensured by developer")
         .serve_at(SNI_PATH, sni_obj)
@@ -80,24 +53,31 @@ pub async fn run_async<T: Tray>(
         .serve_at(MENU_PATH, menu_obj)
         .expect("MENU_PATH should be valid")
         .build()
-        .await?;
+        .await
+        .map_err(|e| Error::Dbus(e))?;
 
     let snw_object = StatusNotifierWatcherProxy::new(&conn)
         .await
         .expect("macro generated dbus Proxy should be valid");
 
-    match snw_object
+    snw_object
         .register_status_notifier_item(&name)
         .await
-        .map_err(|e| e.into())
-    {
-        Ok(()) => service.lock().await.tray.watcher_online(),
-        Err(zbus::fdo::Error::ServiceUnknown(_)) => {
-            if !service.lock().await.tray.watcher_offline() {
-                return Ok(());
+        .map_err(|e| {
+            let fdo_err: zbus::fdo::Error = e.into();
+            if let zbus::fdo::Error::ZBus(e) = fdo_err {
+                Error::Dbus(e)
+            } else {
+                Error::Watcher(fdo_err)
             }
-        }
-        Err(e) => return Err(e.into()),
+        })?;
+
+    if !snw_object
+        .is_status_notifier_host_registered()
+        .await
+        .map_err(|e| Error::Dbus(e))?
+    {
+        return Err(Error::WontShow);
     }
 
     let dbus_object = DBusProxy::new(&conn)
@@ -105,43 +85,63 @@ pub async fn run_async<T: Tray>(
         .expect("built-in Proxy should be valid");
     let mut name_changed_signal = dbus_object
         .receive_name_owner_changed_with_args(&[(0, "org.kde.StatusNotifierWatcher")])
-        .await?;
+        .await
+        .map_err(|e| Error::Dbus(e))?;
 
-    loop {
-        select! {
-            Some(event) = name_changed_signal.next() => {
-                let service = service.lock().await;
-                match event
-                    .args()
-                    .expect("dbus daemon should follow the specification")
-                    .new_owner()
-                    .as_ref()
-                {
-                    Some(_new_owner) => {
-                        snw_object.register_status_notifier_item(&name).await?;
-                        service.tray.watcher_online();
+    let f = async move {
+        loop {
+            select! {
+                Some(event) = name_changed_signal.next() => {
+                    let service = service.lock().await;
+                    match event
+                        .args()
+                        .expect("dbus daemon should follow the specification")
+                        .new_owner()
+                        .as_ref()
+                    {
+                        Some(_new_owner) => {
+                            service.tray.watcher_online();
+                            if let Err(e) = snw_object.register_status_notifier_item(&name).await {
+                                let fdo_err: zbus::fdo::Error = e.into();
+                                let reason = if let zbus::fdo::Error::ZBus(e) = fdo_err {
+                                    OfflineReason::Error(Error::Dbus(e))
+                                } else {
+                                    OfflineReason::Error(Error::Watcher(fdo_err))
+                                };
+                                if !service.tray.watcher_offline(reason) {
+                                    let _ = conn.close().await;
+                                    break;
+                                }
+                            }
+                            // TODO: check is_status_notifier_host_registered?
+                            // it may not ready yet, spawn a delayed check?
+                        }
+                        None => {
+                            if !service.tray.watcher_offline(OfflineReason::No) {
+                                let _ = conn.close().await;
+                                break;
+                            }
+                        }
                     }
-                    None => {
-                        if !service.tray.watcher_offline() {
-                            break Ok(());
+                }
+                Some(msg) = handle_rx.recv() => {
+                    match msg {
+                        HandleReuest::Update(cb) => {
+                            let mut service = service.lock().await;
+                            cb(&mut service.tray);
+                            let _ = service.update(&conn).await;
+                        }
+                        HandleReuest::Shutdown(singal) => {
+                            let _ = conn.close().await;
+                            let _ = singal.send(());
+                            break;
                         }
                     }
                 }
             }
-            Some(msg) = client_rx.recv() => {
-                match msg {
-                    ClientRequest::Update(cb) => {
-                        let mut service = service.lock().await;
-                        cb(&mut service.tray);
-                        let _ = service.update(&conn).await;
-                    }
-                    ClientRequest::Shutdown => {
-                        break Ok(());
-                    }
-                }
-            }
         }
-    }
+    };
+    Ok(f)
 }
 
 pub(crate) struct Service<T> {
@@ -440,7 +440,12 @@ impl<T: Tray> Service<T> {
         let _ = self.update(conn).await;
     }
 
-    pub async fn call_scroll(&mut self, conn: &Connection, delta: i32, orientation: crate::Orientation) {
+    pub async fn call_scroll(
+        &mut self,
+        conn: &Connection,
+        delta: i32,
+        orientation: crate::Orientation,
+    ) {
         self.tray.scroll(delta, orientation);
         let _ = self.update(conn).await;
     }

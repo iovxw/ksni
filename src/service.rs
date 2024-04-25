@@ -66,8 +66,8 @@ impl<T: Tray + 'static> TrayService<T> {
     }
 
     /// Run the service in current thread
-    pub fn run(self) -> Result<(), dbus::Error> {
-        let mut service = self.build_processor()?;
+    pub fn run(self, own_name: bool) -> Result<(), dbus::Error> {
+        let mut service = self.build_processor(name)?;
         loop {
             match service.turn(None) {
                 Err(error::Error::Stopped) => return Ok(()),
@@ -78,21 +78,28 @@ impl<T: Tray + 'static> TrayService<T> {
     }
 
     /// Run the service in a new thread
-    pub fn spawn(self)
+    pub fn spawn(self, own_name: bool)
     where
         T: Send,
     {
-        thread::spawn(|| self.run().unwrap());
+        thread::spawn(|| self.run(name).unwrap());
     }
 
-    fn build_processor(self) -> Result<Processor<T>, dbus::Error> {
-        let name = format!(
-            "org.kde.StatusNotifierItem-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::AcqRel)
-        );
+    fn build_processor(self, own_name: bool) -> Result<Processor<T>, dbus::Error> {
         let conn = LocalConnection::new_session()?;
-        conn.request_name(&name, true, true, false)?;
+        let name = if own_name {
+            format!(
+                "org.kde.StatusNotifierItem-{}-{}",
+                std::process::id(),
+                COUNTER.fetch_add(1, Ordering::AcqRel)
+            )
+        } else {
+            conn.unique_name().to_string()
+        };
+
+        if own_name {
+            conn.request_name(&name, true, true, false)?;
+        }
 
         let (menu_cache, prop_cache) = {
             let state = self.tray.model.lock().unwrap();

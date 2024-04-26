@@ -65,7 +65,7 @@ impl<T: Tray + 'static> TrayService<T> {
         self.tray.clone()
     }
 
-    fn _run(self, own_name: bool) -> Result<(), dbus::Error> {
+    fn service_loop(self, own_name: bool) -> Result<(), dbus::Error> {
         let mut service = self.build_processor(own_name)?;
         loop {
             match service.turn(None) {
@@ -78,12 +78,12 @@ impl<T: Tray + 'static> TrayService<T> {
 
     /// Run the service in current thread
     pub fn run(self) -> Result<(), dbus::Error> {
-        self._run(true)
+        self.service_loop(true)
     }
 
     /// Run the service in current thread, but not register new dbus name
     pub fn run_without_dbus_name(self) -> Result<(), dbus::Error> {
-        self._run(false)
+        self.service_loop(false)
     }
 
     /// Run the service in a new thread

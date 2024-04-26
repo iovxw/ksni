@@ -82,6 +82,9 @@ impl<T: Tray + 'static> TrayService<T> {
     }
 
     /// Run the service in current thread, but not register new dbus name
+    ///
+    /// Which is required for some sandboxed environments (flatpak)
+    /// https://chromium-review.googlesource.com/c/chromium/src/+/4179380
     pub fn run_without_dbus_name(self) -> Result<(), dbus::Error> {
         self.service_loop(false)
     }
@@ -95,6 +98,9 @@ impl<T: Tray + 'static> TrayService<T> {
     }
 
     /// Run the service in a new thread, but not register new dbus name
+    ///
+    /// Which is required for some sandboxed environments (flatpak)
+    /// https://chromium-review.googlesource.com/c/chromium/src/+/4179380
     pub fn spawn_without_dbus_name(self)
     where
         T: Send,

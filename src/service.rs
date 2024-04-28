@@ -88,7 +88,7 @@ pub(crate) async fn run<T: Tray>(
         .await
         .map_err(|e| Error::Dbus(e))?;
 
-    let f = async move {
+    let service_loop = async move {
         loop {
             select! {
                 Some(event) = name_changed_signal.next() => {
@@ -141,7 +141,7 @@ pub(crate) async fn run<T: Tray>(
             }
         }
     };
-    Ok(f)
+    Ok(service_loop)
 }
 
 pub(crate) struct Service<T> {

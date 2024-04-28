@@ -237,8 +237,8 @@ pub trait TrayMethods: Tray + private::Sealed {
     )]
     async fn spawn(self) -> Result<Handle<Self>, Error> {
         let (handle_tx, handle_rx) = mpsc::unbounded_channel();
-        let f = service::run(self, handle_rx).await?;
-        compat::spawn(f);
+        let service_loop = service::run(self, handle_rx).await?;
+        compat::spawn(service_loop);
         Ok(Handle { sender: handle_tx })
     }
 }

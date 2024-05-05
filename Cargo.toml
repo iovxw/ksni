@@ -41,3 +41,15 @@ async-executor = { version = "1", optional = true }
 futures-lite = { version = "2", optional = true }
 futures-channel = { version = "0.3", optional = true }
 once_cell = { version = "1", optional = true }
+
+[dev-dependencies]
+smol = "2"
+smol-macros = "0.1"
+macro_rules_attribute = "0.2"
+
+[[example]]
+name = "async"
+required-features = ["tokio"]
+[[example]]
+name = "async_smol"
+required-features = ["async-io"]

@@ -1,4 +1,4 @@
-use ksni::TrayMethods; // for the spawn method
+use ksni::TrayMethods; // provides the spawn method
 
 #[derive(Debug)]
 struct MyTray {
@@ -100,9 +100,7 @@ async fn main() {
 
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     // We can modify the tray
-    handle.update(|tray: &mut MyTray| {
-        tray.checked = true;
-    }).await;
+    handle.update(|tray: &mut MyTray| tray.checked = true).await;
     // Run forever
     std::future::pending().await
 }

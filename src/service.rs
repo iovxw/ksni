@@ -10,12 +10,10 @@ use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Str};
 use zbus::Connection;
 
-use crate::compat::{mpsc, Mutex};
+use crate::compat::{self, mpsc, select, Mutex};
 use crate::dbus_interface::{
     DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_PATH, SNI_PATH,
 };
-
-use crate::compat::select;
 use crate::menu;
 use crate::{Error, HandleReuest, OfflineReason, Tray};
 
@@ -46,6 +44,7 @@ pub(crate) async fn run<T: Tray>(
     // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
     let conn = zbus::connection::Builder::session()
         .map_err(|e| Error::Dbus(e))?
+        .internal_executor(false) // avoid extra thread when async-io enabled
         .name(&*name)
         .expect("validity of name should be ensured by developer")
         .serve_at(SNI_PATH, sni_obj)
@@ -55,6 +54,17 @@ pub(crate) async fn run<T: Tray>(
         .build()
         .await
         .map_err(|e| Error::Dbus(e))?;
+
+    if cfg!(feature = "async-io") {
+        let executor = conn.executor().clone();
+        // must start the executor before register_status_notifier_item
+        compat::spawn(async move {
+            // won't empty until conn stopped
+            while !executor.is_empty() {
+                executor.tick().await;
+            }
+        });
+    }
 
     let snw_object = StatusNotifierWatcherProxy::new(&conn)
         .await

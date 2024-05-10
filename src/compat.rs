@@ -17,11 +17,19 @@ mod tokio {
         tokio::spawn(future);
     }
 
+    #[cfg(feature = "blocking")]
     pub fn block_on<T>(future: impl Future<Output = T>) -> T {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
+        use once_cell::sync::OnceCell;
+        use tokio::runtime::Runtime;
+        static RUNTIME: OnceCell<Runtime> = OnceCell::new();
+
+        RUNTIME
+            .get_or_init(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+            })
             .block_on(future)
     }
 

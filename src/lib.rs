@@ -2,6 +2,8 @@
 //!
 //! See the [README.md](https://github.com/iovxw/ksni) for an example
 
+#[cfg(feature = "blocking")]
+pub mod blocking;
 mod compat;
 mod dbus_interface;
 pub mod menu;

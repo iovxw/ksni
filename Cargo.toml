@@ -14,7 +14,7 @@ license = "Unlicense"
 
 [features]
 default = ["tokio"]
-blocking = []
+blocking = ["dep:once_cell"]
 tokio = ["dep:tokio", "zbus/tokio"]
 async-io = [
     "dep:async-io",
@@ -53,3 +53,6 @@ required-features = ["tokio"]
 [[example]]
 name = "async_smol"
 required-features = ["async-io"]
+[[example]]
+name = "blocking"
+required-features = ["blocking"]

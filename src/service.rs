@@ -20,18 +20,9 @@ use crate::{Error, HandleReuest, OfflineReason, Tray};
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 pub(crate) async fn run<T: Tray>(
-    tray: T,
-    mut handle_rx: mpsc::UnboundedReceiver<HandleReuest<T>>,
+    service: Arc<Mutex<Service<T>>>,
+    mut handle_rx: mpsc::UnboundedReceiver<HandleReuest>,
 ) -> Result<impl Future<Output = ()>, Error> {
-    let flattened_menu = menu::menu_flatten(T::menu(&tray));
-    let prop_monitor = PropertiesMonitor::new(&tray);
-    let service = Arc::new(Mutex::new(Service {
-        tray,
-        flattened_menu,
-        prop_monitor,
-        item_id_offset: 0,
-        revision: 0,
-    }));
     let name = format!(
         "org.kde.StatusNotifierItem-{}-{}",
         std::process::id(),
@@ -136,10 +127,10 @@ pub(crate) async fn run<T: Tray>(
                 }
                 Some(msg) = handle_rx.recv() => {
                     match msg {
-                        HandleReuest::Update(cb) => {
+                        HandleReuest::Update(singal) => {
                             let mut service = service.lock().await;
-                            cb(&mut service.tray);
                             let _ = service.update(&conn).await;
+                            let _ = singal.send(());
                         }
                         HandleReuest::Shutdown(singal) => {
                             let _ = conn.close().await;
@@ -155,7 +146,7 @@ pub(crate) async fn run<T: Tray>(
 }
 
 pub(crate) struct Service<T> {
-    tray: T,
+    pub tray: T,
     flattened_menu: Vec<(menu::RawMenuItem<T>, Vec<usize>)>,
     prop_monitor: PropertiesMonitor,
     item_id_offset: i32,
@@ -163,6 +154,18 @@ pub(crate) struct Service<T> {
 }
 
 impl<T: Tray> Service<T> {
+    pub fn new(tray: T) -> Arc<Mutex<Self>> {
+        let flattened_menu = menu::menu_flatten(T::menu(&tray));
+        let prop_monitor = PropertiesMonitor::new(&tray);
+        Arc::new(Mutex::new(Service {
+            tray,
+            flattened_menu,
+            prop_monitor,
+            item_id_offset: 0,
+            revision: 0,
+        }))
+    }
+
     async fn update_properties(&mut self, conn: &Connection) -> zbus::Result<()> {
         let sni_obj = conn
             .object_server()

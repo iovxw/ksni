@@ -2,6 +2,8 @@
 //!
 //! See the [README.md](https://github.com/iovxw/ksni) for an example
 
+use std::sync::{Arc, Weak};
+
 #[cfg(feature = "blocking")]
 pub mod blocking;
 mod compat;
@@ -14,7 +16,7 @@ mod tray;
 pub use menu::{MenuItem, TextDirection};
 pub use tray::{Category, Icon, Orientation, Status, ToolTip};
 
-use crate::compat::{mpsc, oneshot};
+use crate::compat::{mpsc, oneshot, Mutex};
 
 /// A system tray, implement this to create your tray
 ///
@@ -239,9 +241,13 @@ pub trait TrayMethods: Tray + private::Sealed {
     )]
     async fn spawn(self) -> Result<Handle<Self>, Error> {
         let (handle_tx, handle_rx) = mpsc::unbounded_channel();
-        let service_loop = service::run(self, handle_rx).await?;
+        let service = service::Service::new(self);
+        let service_loop = service::run(service.clone(), handle_rx).await?;
         compat::spawn(service_loop);
-        Ok(Handle { sender: handle_tx })
+        Ok(Handle {
+            service: Arc::downgrade(&service),
+            sender: handle_tx,
+        })
     }
 }
 impl<T: Tray> TrayMethods for T {}
@@ -256,14 +262,15 @@ mod private {
     impl<T: crate::Tray> Sealed for T {}
 }
 
-pub(crate) enum HandleReuest<T> {
-    Update(Box<dyn FnOnce(&mut T) + Send>),
+pub(crate) enum HandleReuest {
+    Update(oneshot::Sender<()>),
     Shutdown(oneshot::Sender<()>),
 }
 
 /// Handle to the tray
 pub struct Handle<T> {
-    sender: mpsc::UnboundedSender<HandleReuest<T>>,
+    service: Weak<Mutex<service::Service<T>>>,
+    sender: mpsc::UnboundedSender<HandleReuest>,
 }
 
 impl<T> Handle<T> {
@@ -271,17 +278,17 @@ impl<T> Handle<T> {
     ///
     /// Returns the result of `f`, returns `None` if the tray service
     /// has been shutdown.
-    pub async fn update<R: Send + 'static, F: FnOnce(&mut T) -> R + Send + 'static>(
-        &self,
-        f: F,
-    ) -> Option<R> {
-        let (tx, rx) = oneshot::channel();
-        self.sender
-            .send(HandleReuest::Update(Box::new(move |t: &mut T| {
-                let _ = tx.send((f)(t));
-            })))
-            .ok()?;
-        rx.await.ok()
+    pub async fn update<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> Option<R> {
+        if let Some(service) = self.service.upgrade() {
+            // NOTE: free the lock before send any message
+            let r = f(&mut service.lock().await.tray);
+            let (tx, rx) = oneshot::channel();
+            if self.sender.send(HandleReuest::Update(tx)).is_ok() {
+                let _ = rx.await;
+                return Some(r);
+            }
+        }
+        None
     }
 
     /// Shutdown the tray service
@@ -304,6 +311,7 @@ impl<T> Handle<T> {
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Handle {
+            service: self.service.clone(),
             sender: self.sender.clone(),
         }
     }

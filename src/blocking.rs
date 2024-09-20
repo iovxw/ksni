@@ -1,11 +1,11 @@
 //! The blocking API
 
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::thread;
 
 use crate::{
-    compat::{self, mpsc, oneshot, Mutex},
-    private, service, Error, HandleReuest, Tray,
+    compat::{self, mpsc},
+    private, service, Error, Tray,
 };
 
 // TODO: doc
@@ -18,19 +18,16 @@ pub trait TrayMethods: Tray + private::Sealed {
         thread::spawn(move || {
             compat::block_on(service_loop);
         });
-        Ok(Handle {
+        Ok(Handle(crate::Handle {
             service: Arc::downgrade(&service),
             sender: handle_tx,
-        })
+        }))
     }
 }
 impl<T: Tray> TrayMethods for T {}
 
 /// Handle to the tray
-pub struct Handle<T> {
-    service: Weak<Mutex<service::Service<T>>>,
-    sender: mpsc::UnboundedSender<HandleReuest>,
-}
+pub struct Handle<T>(crate::Handle<T>);
 
 impl<T> Handle<T> {
     /// Update the tray
@@ -38,39 +35,22 @@ impl<T> Handle<T> {
     /// Returns the result of `f`, returns `None` if the tray service
     /// has been shutdown.
     pub fn update<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> Option<R> {
-        compat::block_on(async {
-            if let Some(service) = self.service.upgrade() {
-                // NOTE: free the lock before send any message
-                let r = f(&mut service.lock().await.tray);
-                let (tx, rx) = oneshot::channel();
-                if self.sender.send(HandleReuest::Update(tx)).is_ok() {
-                    let _ = rx.await;
-                    return Some(r);
-                }
-            }
-            None
-        })
+        compat::block_on(self.0.update(f))
     }
 
     /// Shutdown the tray service
     pub fn shutdown(&self) {
-        let (tx, rx) = oneshot::channel();
-        if self.sender.send(HandleReuest::Shutdown(tx)).is_ok() {
-            let _ = compat::block_on(rx);
-        }
+        compat::block_on(self.0.shutdown())
     }
 
     /// Returns `true` if the tray service has been shutdown
     pub fn is_closed(&self) -> bool {
-        self.sender.is_closed()
+        self.0.is_closed()
     }
 }
 
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
-        Handle {
-            service: self.service.clone(),
-            sender: self.sender.clone(),
-        }
+        Handle(self.0.clone())
     }
 }

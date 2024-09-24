@@ -223,6 +223,9 @@ pub enum Error {
 }
 
 // TODO: doc
+// the returned `Future` of all methods is always `Send`, because `Tray: Send` and `Self: Tray`
+// verified by `_assert_tray_methods_returned_future_is_send`
+#[allow(async_fn_in_trait)]
 pub trait TrayMethods: Tray + private::Sealed {
     // Get [`Handle`] of a running [`Tray`]
     //
@@ -235,14 +238,28 @@ pub trait TrayMethods: Tray + private::Sealed {
     //}
 
     // TODO: doc
-    #[allow(
-        async_fn_in_trait,
-        reason = "the returned `Future` of this method is always `Send`, because `Tray: Send` and `Self: Tray`"
-    )]
     async fn spawn(self) -> Result<Handle<Self>, Error> {
+        self.spawn_with_name(true).await
+    }
+
+    /// Run the tray service in background, but without a dbus well-known name
+    ///
+    /// This violates the [StatusNotifierItem] specification, but is required in some sandboxed
+    /// environments (e.g., flatpak).
+    ///
+    /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
+    ///
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
+    async fn spawn_without_dbus_name(self) -> Result<Handle<Self>, Error> {
+        self.spawn_with_name(false).await
+    }
+
+    // sealed trait, safe to add private methods
+    #[doc(hidden)]
+    async fn spawn_with_name(self, own_name: bool) -> Result<Handle<Self>, Error> {
         let (handle_tx, handle_rx) = mpsc::unbounded_channel();
         let service = service::Service::new(self);
-        let service_loop = service::run(service.clone(), handle_rx).await?;
+        let service_loop = service::run(service.clone(), handle_rx, own_name).await?;
         compat::spawn(service_loop);
         Ok(Handle {
             service: Arc::downgrade(&service),
@@ -252,9 +269,10 @@ pub trait TrayMethods: Tray + private::Sealed {
 }
 impl<T: Tray> TrayMethods for T {}
 
-fn _assert_spawn_method_returned_future_is_send<T: Tray>(x: T) {
+fn _assert_tray_methods_returned_future_is_send<T: Tray + Clone>(x: T) {
     fn assert_send<T: Send>(_: T) {}
-    assert_send(x.spawn());
+    assert_send(x.clone().spawn());
+    assert_send(x.clone().spawn_without_dbus_name());
 }
 
 mod private {

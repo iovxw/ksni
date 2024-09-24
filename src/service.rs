@@ -17,18 +17,13 @@ use crate::dbus_interface::{
 use crate::menu;
 use crate::{Error, HandleReuest, OfflineReason, Tray};
 
-static COUNTER: AtomicUsize = AtomicUsize::new(1);
+static INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 pub(crate) async fn run<T: Tray>(
     service: Arc<Mutex<Service<T>>>,
     mut handle_rx: mpsc::UnboundedReceiver<HandleReuest>,
+    own_name: bool,
 ) -> Result<impl Future<Output = ()>, Error> {
-    let name = format!(
-        "org.kde.StatusNotifierItem-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::AcqRel)
-    );
-
     let sni_obj = StatusNotifierItem::new(service.clone());
     let menu_obj = DbusMenu::new(service.clone());
 
@@ -36,8 +31,6 @@ pub(crate) async fn run<T: Tray>(
     let conn = zbus::connection::Builder::session()
         .map_err(|e| Error::Dbus(e))?
         .internal_executor(false) // avoid extra thread when async-io enabled
-        .name(&*name)
-        .expect("validity of name should be ensured by developer")
         .serve_at(SNI_PATH, sni_obj)
         .expect("SNI_PATH should be valid")
         .serve_at(MENU_PATH, menu_obj)
@@ -45,6 +38,23 @@ pub(crate) async fn run<T: Tray>(
         .build()
         .await
         .map_err(|e| Error::Dbus(e))?;
+
+    let name = if own_name {
+        let name = format!(
+            "org.kde.StatusNotifierItem-{}-{}",
+            std::process::id(),
+            INSTANCE_COUNTER.fetch_add(1, Ordering::AcqRel)
+        );
+        conn.request_name(&*name).await.map_err(|e| {
+            assert_ne!(e, zbus::Error::NameTaken, "generated name should be unique");
+            Error::Dbus(e)
+        })?;
+        name
+    } else {
+        conn.unique_name()
+            .expect("unique name should be set after connected")
+            .to_string()
+    };
 
     if cfg!(feature = "async-io") {
         let executor = conn.executor().clone();

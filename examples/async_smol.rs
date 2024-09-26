@@ -10,15 +10,14 @@ struct MyTray {
 }
 
 impl ksni::Tray for MyTray {
+    fn id(&self) -> String {
+        env!("CARGO_PKG_NAME").into()
+    }
     fn icon_name(&self) -> String {
         "help-about".into()
     }
     fn title(&self) -> String {
         if self.checked { "CHECKED!" } else { "MyTray" }.into()
-    }
-    // **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
-    fn id(&self) -> String {
-        env!("CARGO_PKG_NAME").into()
     }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;

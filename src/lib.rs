@@ -19,9 +19,22 @@ pub use tray::{Category, Icon, Orientation, Status, ToolTip};
 use crate::compat::{mpsc, oneshot, Mutex};
 
 /// A system tray, implement this to create your tray
-///
-/// **NOTE**: On some system trays, [`Tray::id`] is a required property to avoid unexpected behaviors
 pub trait Tray: Sized + Send + 'static {
+    /// It's a name that should be unique for this application and consistent
+    /// between sessions, such as the application name itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # struct X;
+    /// # impl ksni::Tray for X {
+    /// fn id(&self) -> String {
+    ///     env!("CARGO_PKG_NAME").into()
+    /// }
+    /// # }
+    /// ```
+    fn id(&self) -> String;
+
     /// Asks the status notifier item for activation, this is typically a
     /// consequence of user input, such as mouse left click over the graphical
     /// representation of the item.
@@ -54,12 +67,6 @@ pub trait Tray: Sized + Send + 'static {
     /// Describes the category of this item.
     fn category(&self) -> Category {
         Category::ApplicationStatus
-    }
-
-    /// It's a name that should be unique for this application and consistent
-    /// between sessions, such as the application name itself.
-    fn id(&self) -> String {
-        Default::default()
     }
 
     /// It's a name that describes the application, it can be more descriptive

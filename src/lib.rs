@@ -214,11 +214,15 @@ pub enum Error {
     /// The tray was successfully created but can not be displayed due to no [StatusNotifierHost]
     /// exists
     ///
-    /// The specification recommend you "should fall back using the Freedesktop System tray specification"
+    /// The [StatusNotifierItem] specification recommend you "should fall back using the
+    /// [Freedesktop System tray] specification"
     ///
-    /// This error can be caused by the program starting earlier than the desktop environment
+    /// Starting the tray before the initialization of the desktop environment finished may
+    /// cause this error
     ///
     /// [StatusNotifierHost]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierHost/
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
+    /// [Freedesktop System tray]: https://specifications.freedesktop.org/systemtray-spec/0.4/
     WontShow,
 }
 

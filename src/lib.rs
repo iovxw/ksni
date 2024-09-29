@@ -201,7 +201,6 @@ pub enum OfflineReason {
 ///
 /// [StatusNotifierWatcher]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierWatcher/
 #[derive(Debug)]
-// FIXME: impl Error
 #[non_exhaustive]
 pub enum Error {
     /// D-Bus connection error
@@ -231,6 +230,28 @@ pub enum Error {
     /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
     /// [Freedesktop System tray]: https://specifications.freedesktop.org/systemtray-spec/0.4/
     WontShow,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Error::*;
+        match self {
+            Dbus(e) => write!(f, "D-Bus connection error: {e}"),
+            Watcher(e) => write!(f, "failed to register to the StatusNotifierWatcher: {e}"),
+            WontShow => write!(f, "no StatusNotifierHost exists"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        use Error::*;
+        match self {
+            Dbus(e) => e.source(),
+            Watcher(e) => e.source(),
+            WontShow => None,
+        }
+    }
 }
 
 // TODO: doc

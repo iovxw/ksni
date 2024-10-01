@@ -81,6 +81,8 @@ pub trait Tray: Sized + Send + 'static {
     }
 
     // NOTE: u32 in org.freedesktop.StatusNotifierItem
+    // but we are actually org.kde.StatusNotifierItem
+    // https://github.com/ubuntu/gnome-shell-extension-appindicator/issues/389
     /// It's the windowing-system dependent identifier for a window, the
     /// application can chose one of its windows to be available through this
     /// property or just set 0 if it's not interested.

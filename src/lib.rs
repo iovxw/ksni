@@ -158,23 +158,28 @@ pub trait Tray: Sized + Send + 'static {
         TextDirection::LeftToRight
     }
 
-    /// The menu that you want to display
+    /// The menu you want to display
+    ///
+    /// See examples in root documentation
     fn menu(&self) -> Vec<MenuItem<Self>> {
         Default::default()
     }
 
-    /// The `org.kde.StatusNotifierWatcher` is online
+    /// The `org.kde.StatusNotifierWatcher` is back to online
+    ///
+    /// This method will only be called after [`watcher_offline`]
+    ///
+    /// [`watcher_offline`]: Self::watcher_offline
     fn watcher_online(&self) {}
 
     /// The `org.kde.StatusNotifierWatcher` is offline
     ///
-    /// You can setup a fallback tray here
+    /// You can setup a fallback tray here, see [`OfflineReason`] for details
     ///
     /// Return `false` to shutdown the tray service
-    #[allow(
-        unused_variables,
-        reason = "the default impl don't use this parameter, but it should be used by user, so keep the name without _ for autocomplete"
-    )]
+    // the default impl don't use this parameter, but it should be used by user, so keep the name
+    // without _ for autocomplete
+    #[allow(unused_variables)]
     fn watcher_offline(&self, reason: OfflineReason) -> bool {
         true
     }

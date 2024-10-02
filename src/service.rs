@@ -103,15 +103,15 @@ pub(crate) async fn run<T: Tray>(
         loop {
             select! {
                 Some(event) = name_changed_signal.next() => {
+                    let args = event.args().expect("dbus daemon should follow the specification");
                     let service = service.lock().await;
-                    match event
-                        .args()
-                        .expect("dbus daemon should follow the specification")
-                        .new_owner()
-                        .as_ref()
-                    {
+                    match args.new_owner.as_ref() {
                         Some(_new_owner) => {
-                            service.tray.watcher_online();
+                            if args.old_owner.is_none() {
+                                // only call the watcher_online after the watcher really offline
+                                service.tray.watcher_online();
+                            }
+
                             if let Err(e) = snw_object.register_status_notifier_item(&name).await {
                                 let fdo_err: zbus::fdo::Error = e.into();
                                 let reason = if let zbus::fdo::Error::ZBus(e) = fdo_err {

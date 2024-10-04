@@ -261,7 +261,7 @@ impl std::error::Error for Error {
     }
 }
 
-// TODO: doc
+/// Provides methods for [`Tray`]
 // the returned `Future` of all methods is always `Send`, because `Tray: Send` and `Self: Tray`
 // verified by `_assert_tray_methods_returned_future_is_send`
 #[allow(async_fn_in_trait)]
@@ -276,7 +276,11 @@ pub trait TrayMethods: Tray + private::Sealed {
     //    todo!()
     //}
 
-    // TODO: doc
+    /// Run the tray service in background
+    ///
+    /// If your application will be running in a sandbox, see [`spawn_without_dbus_name`]
+    ///
+    /// [`spawn_without_dbus_name`]: Self::spawn_without_dbus_name
     async fn spawn(self) -> Result<Handle<Self>, Error> {
         self.spawn_with_name(true).await
     }
@@ -349,19 +353,60 @@ impl<T> Handle<T> {
     }
 
     /// Shutdown the tray service
-    ///
-    /// The shutdown process will be start immediately,
-    /// even if you don't await the result
-    pub async fn shutdown(&self) {
+    pub fn shutdown(&self) -> ShutdownAwaiter {
         let (tx, rx) = oneshot::channel();
         if self.sender.send(HandleReuest::Shutdown(tx)).is_ok() {
-            let _ = rx.await;
+            ShutdownAwaiter::new(rx)
+        } else {
+            ShutdownAwaiter::empty()
         }
     }
 
     /// Returns `true` if the tray service has been shutdown
     pub fn is_closed(&self) -> bool {
         self.sender.is_closed()
+    }
+}
+
+/// Just `.await` if you want to wait the shutdown to complete
+pub struct ShutdownAwaiter {
+    rx: Option<oneshot::Receiver<()>>,
+    done: bool,
+}
+
+impl ShutdownAwaiter {
+    fn new(rx: oneshot::Receiver<()>) -> Self {
+        Self {
+            rx: Some(rx),
+            done: false,
+        }
+    }
+    fn empty() -> Self {
+        Self {
+            rx: None,
+            done: false,
+        }
+    }
+}
+
+impl std::future::Future for ShutdownAwaiter {
+    type Output = ();
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let s = self.get_mut();
+        if let Some(rx) = &mut s.rx {
+            if std::pin::pin!(rx).poll(cx).is_ready() {
+                s.rx.take();
+                s.done = true;
+                return std::task::Poll::Ready(());
+            }
+        } else if !s.done {
+            s.done = true;
+            return std::task::Poll::Ready(());
+        }
+        std::task::Poll::Pending
     }
 }
 

@@ -8,9 +8,9 @@ use crate::{
     private, service, Error, Tray,
 };
 
-// TODO: doc
+/// Provides blocking methods for [`Tray`]
 pub trait TrayMethods: Tray + private::Sealed {
-    // TODO: doc
+    /// Run the tray service in background
     fn spawn(self) -> Result<Handle<Self>, Error> {
         self.spawn_with_name(true)
     }
@@ -55,13 +55,21 @@ impl<T> Handle<T> {
     }
 
     /// Shutdown the tray service
-    pub fn shutdown(&self) {
-        compat::block_on(self.0.shutdown())
+    pub fn shutdown(&self) -> ShutdownAwaiter {
+        ShutdownAwaiter(self.0.shutdown())
     }
 
     /// Returns `true` if the tray service has been shutdown
     pub fn is_closed(&self) -> bool {
         self.0.is_closed()
+    }
+}
+
+pub struct ShutdownAwaiter(crate::ShutdownAwaiter);
+
+impl ShutdownAwaiter {
+    pub fn wait(self) {
+        compat::block_on(self.0)
     }
 }
 

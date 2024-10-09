@@ -83,6 +83,10 @@ impl fmt::Display for Status {
 ///
 /// That can be visualized for instance by a tooltip (or by any other mean the
 /// visualization consider appropriate.
+///
+/// See [`Tray::tool_tip`]
+///
+/// [`Tray::tool_tip`]: crate::Tray::tool_tip
 #[derive(Clone, Debug, Default, Hash, Type, Value, Serialize)]
 pub struct ToolTip {
     /// Freedesktop-compliant name for an icon.

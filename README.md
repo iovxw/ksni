@@ -10,7 +10,7 @@ A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 ## Example
 
 ```rust
-use ksni;
+use ksni::TrayMethods; // provides the spawn method
 
 #[derive(Debug)]
 struct MyTray {
@@ -19,15 +19,14 @@ struct MyTray {
 }
 
 impl ksni::Tray for MyTray {
+    fn id(&self) -> String {
+        env!("CARGO_PKG_NAME").into()
+    }
     fn icon_name(&self) -> String {
         "help-about".into()
     }
     fn title(&self) -> String {
         if self.checked { "CHECKED!" } else { "MyTray" }.into()
-    }
-    // NOTE: On some system trays, `id` is a required property to avoid unexpected behaviors
-    fn id(&self) -> String {
-        env!("CARGO_PKG_NAME").into()
     }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
@@ -102,23 +101,19 @@ impl ksni::Tray for MyTray {
     }
 }
 
-fn main() {
-    let service = ksni::TrayService::new(MyTray {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    let tray = MyTray {
         selected_option: 0,
         checked: false,
-    });
-    let handle = service.handle();
-    service.spawn();
+    };
+    let handle = tray.spawn().await.unwrap();
 
-    std::thread::sleep(std::time::Duration::from_secs(5));
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     // We can modify the tray
-    handle.update(|tray: &mut MyTray| {
-        tray.checked = true;
-    });
+    handle.update(|tray: &mut MyTray| tray.checked = true).await;
     // Run forever
-    loop {
-        std::thread::park();
-    }
+    std::future::pending().await
 }
 ```
 
@@ -128,6 +123,27 @@ Will create a system tray like this:
 
 (In GNOME with AppIndicator extension)
 
+## Async Runtime
+
+ksni uses [Tokio] by default, but can be runtime-agnostic by disabling the "tokio" feature and
+enabling the "async-io" feature
+
+```toml
+[dependencies]
+ksni = { version = "0.3", default-features = false, features = ["async-io"] }
+```
+
+## Blocking API
+
+Enable the "blocking" feature in Cargo.toml to get a non-async API
+
+```toml
+[dependencies]
+ksni = { version = "0.3", features = ["blocking"] }
+```
+
+[Tokio]: https://tokio.rs
+
 ## Todo
  - [X] org.kde.StatusNotifierItem
  - [X] com.canonical.dbusmenu
@@ -135,7 +151,7 @@ Will create a system tray like this:
  - [X] org.freedesktop.DBus.Properties
  - [X] radio item
  - [ ] documents
- - [ ] async [diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)
+ - [X] async ~~[diwic/dbus-rs#166](https://github.com/diwic/dbus-rs/issues/166)~~ edit: zbus now
  - [X] mutable menu items
 
 ## License

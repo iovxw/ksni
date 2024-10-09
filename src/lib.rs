@@ -1,6 +1,27 @@
 //! A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 //!
 //! See the [README.md](https://github.com/iovxw/ksni) for an example
+//!
+//! # Async Runtime
+//!
+//! ksni uses [Tokio] by default, but can be runtime-agnostic by disabling the "tokio" feature and
+//! enabling the "async-io" feature
+//!
+//! ```toml
+//! [dependencies]
+//! ksni = { version = "0.3", default-features = false, features = ["async-io"] }
+//! ```
+//!
+//! # Blocking API
+//!
+//! Enable the "blocking" feature in Cargo.toml to get a non-async API
+//!
+//! ```toml
+//! [dependencies]
+//! ksni = { version = "0.3", features = ["blocking"] }
+//! ```
+//!
+//! [Tokio]: https://tokio.rs
 
 use std::sync::{Arc, Weak};
 
@@ -368,6 +389,8 @@ impl<T> Handle<T> {
     }
 }
 
+/// Returned by [`Handle::shutdown`]
+///
 /// Just `.await` if you want to wait the shutdown to complete
 pub struct ShutdownAwaiter {
     rx: Option<oneshot::Receiver<()>>,

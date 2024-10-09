@@ -65,9 +65,11 @@ impl<T> Handle<T> {
     }
 }
 
+/// Returned by [`Handle::shutdown`]
 pub struct ShutdownAwaiter(crate::ShutdownAwaiter);
 
 impl ShutdownAwaiter {
+    /// Wait the shutdown to complete
     pub fn wait(self) {
         compat::block_on(self.0)
     }

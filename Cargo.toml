@@ -3,7 +3,7 @@ name = "ksni"
 version = "0.3.0"
 authors = ["iovxw <iovxw@outlook.com>"]
 edition = "2021"
-rust-version = "1.58"
+rust-version = "1.75"
 description = """
 A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 """

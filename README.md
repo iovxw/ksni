@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/iovxw/ksni/workflows/Rust/badge.svg)](https://github.com/iovxw/ksni/actions?query=workflow%3ARust)
 [![Crates](https://img.shields.io/crates/v/ksni.svg)](https://crates.io/crates/ksni)
 [![Documentation](https://docs.rs/ksni/badge.svg)](https://docs.rs/ksni)
-[![MSRV](https://img.shields.io/badge/msrv-1.58.0-blue)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
+[![MSRV](https://img.shields.io/badge/msrv-1.75.0-blue)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
 
 A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 

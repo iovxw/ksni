@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
-use zbus::{Connection, SignalContext};
+use zbus::{object_server::SignalEmitter, Connection};
 
 use crate::compat::Mutex;
 use crate::service::Service;
@@ -17,7 +17,7 @@ pub const MENU_PATH: ObjectPath = ObjectPath::from_static_str_unchecked("/MenuBa
     default_service = "org.kde.StatusNotifierWatcher",
     default_path = "/StatusNotifierWatcher"
 )]
-trait StatusNotifierWatcher {
+pub trait StatusNotifierWatcher {
     // methods
     async fn register_status_notifier_item(&self, service: &str) -> zbus::Result<()>;
     async fn register_status_notifier_host(&self, service: &str) -> zbus::Result<()>;
@@ -193,22 +193,22 @@ impl<T: Tray> StatusNotifierItem<T> {
 
     // signals
     #[zbus(signal)]
-    pub async fn new_title(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    pub async fn new_title(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub async fn new_icon(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    pub async fn new_icon(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub async fn new_attention_icon(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    pub async fn new_attention_icon(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub async fn new_overlay_icon(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    pub async fn new_overlay_icon(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub async fn new_tool_tip(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    pub async fn new_tool_tip(ctxt: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub async fn new_status(ctxt: &SignalContext<'_>, status: &str) -> zbus::Result<()>;
+    pub async fn new_status(ctxt: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
 }
 
 #[derive(Debug, Default, Type, Serialize, Deserialize, Value, OwnedValue)]
@@ -364,14 +364,14 @@ impl<T: Tray> DbusMenu<T> {
     // signals
     #[zbus(signal)]
     pub async fn items_properties_updated(
-        ctxt: &SignalContext<'_>,
+        ctxt: &SignalEmitter<'_>,
         updated_props: Vec<(i32, HashMap<String, OwnedValue>)>,
         removed_props: Vec<(i32, Vec<String>)>,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
     pub async fn layout_updated(
-        ctxt: &SignalContext<'_>,
+        ctxt: &SignalEmitter<'_>,
         revision: u32,
         parent: i32,
     ) -> zbus::Result<()>;

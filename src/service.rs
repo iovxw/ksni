@@ -190,20 +190,20 @@ impl<T: Tray> Service<T> {
             menu_obj
                 .get_mut()
                 .await
-                .text_direction_changed(menu_obj.signal_context())
+                .text_direction_changed(menu_obj.signal_emitter())
                 .await?;
         }
 
         if self.status_changed() {
             StatusNotifierItem::<T>::new_status(
-                sni_obj.signal_context(),
+                sni_obj.signal_emitter(),
                 &self.get_status().to_string(),
             )
             .await?;
             menu_obj
                 .get_mut()
                 .await
-                .status_changed(menu_obj.signal_context())
+                .status_changed(menu_obj.signal_emitter())
                 .await?;
         }
 
@@ -211,12 +211,12 @@ impl<T: Tray> Service<T> {
             sni_obj
                 .get_mut()
                 .await
-                .icon_theme_path_changed(sni_obj.signal_context())
+                .icon_theme_path_changed(sni_obj.signal_emitter())
                 .await?;
             menu_obj
                 .get_mut()
                 .await
-                .icon_theme_path_changed(menu_obj.signal_context())
+                .icon_theme_path_changed(menu_obj.signal_emitter())
                 .await?;
         }
 
@@ -224,7 +224,7 @@ impl<T: Tray> Service<T> {
             sni_obj
                 .get_mut()
                 .await
-                .category_changed(sni_obj.signal_context())
+                .category_changed(sni_obj.signal_emitter())
                 .await?;
         }
 
@@ -232,29 +232,29 @@ impl<T: Tray> Service<T> {
             sni_obj
                 .get_mut()
                 .await
-                .window_id_changed(sni_obj.signal_context())
+                .window_id_changed(sni_obj.signal_emitter())
                 .await?;
         }
 
         // TODO: assert the id is consistent
 
         if self.title_changed() {
-            StatusNotifierItem::<T>::new_title(sni_obj.signal_context()).await?;
+            StatusNotifierItem::<T>::new_title(sni_obj.signal_emitter()).await?;
         }
         if self.icon_name_changed() || self.icon_pixmap_changed() {
-            StatusNotifierItem::<T>::new_icon(sni_obj.signal_context()).await?;
+            StatusNotifierItem::<T>::new_icon(sni_obj.signal_emitter()).await?;
         }
         if self.overlay_icon_name_changed() || self.overlay_icon_pixmap_changed() {
-            StatusNotifierItem::<T>::new_overlay_icon(sni_obj.signal_context()).await?;
+            StatusNotifierItem::<T>::new_overlay_icon(sni_obj.signal_emitter()).await?;
         }
         if self.attention_icon_name_changed()
             || self.attention_icon_pixmap_changed()
             || self.attention_movie_name_changed()
         {
-            StatusNotifierItem::<T>::new_attention_icon(sni_obj.signal_context()).await?;
+            StatusNotifierItem::<T>::new_attention_icon(sni_obj.signal_emitter()).await?;
         }
         if self.tool_tip_changed() {
-            StatusNotifierItem::<T>::new_tool_tip(sni_obj.signal_context()).await?;
+            StatusNotifierItem::<T>::new_tool_tip(sni_obj.signal_emitter()).await?;
         }
         Ok(())
     }
@@ -298,10 +298,10 @@ impl<T: Tray> Service<T> {
             // which is required to avoid unexpected behaviors on some system tray
             self.revision += 1;
             self.item_id_offset += self.flattened_menu.len() as i32;
-            DbusMenu::<T>::layout_updated(menu_obj.signal_context(), self.revision, 0).await?;
+            DbusMenu::<T>::layout_updated(menu_obj.signal_emitter(), self.revision, 0).await?;
         } else if !all_updated_props.is_empty() || !all_removed_props.is_empty() {
             DbusMenu::<T>::items_properties_updated(
-                menu_obj.signal_context(),
+                menu_obj.signal_emitter(),
                 all_updated_props,
                 all_removed_props,
             )

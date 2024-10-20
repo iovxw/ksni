@@ -29,7 +29,7 @@ async-io = [
 [dependencies]
 paste = "1"
 futures-util = "0.3"
-zbus = { version = "4", default-features = false }
+zbus = { version = "5", default-features = false }
 serde = { version = "1", features = ["derive"] }
 
 tokio = { version = "1", features = ["rt", "macros"], optional = true }

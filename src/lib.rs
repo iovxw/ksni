@@ -41,6 +41,14 @@ use crate::compat::{mpsc, oneshot, Mutex};
 
 /// A system tray, implement this to create your tray
 pub trait Tray: Sized + Send + 'static {
+    /// Replaces the default activate behavior with opening the menu
+    ///
+    /// If `true`, when users triggers the activate action (usually a mouse left click),
+    /// [`Self::activate`] will NOT be called, it will instead open the [`Self::menu`]
+    ///
+    /// Default is `false`
+    const MENU_ON_ACTIVATE: bool = false;
+
     /// It's a name that should be unique for this application and consistent
     /// between sessions, such as the application name itself.
     ///

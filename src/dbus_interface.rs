@@ -69,9 +69,15 @@ impl<T: Tray> StatusNotifierItem<T> {
         x: i32,
         y: i32,
     ) -> zbus::fdo::Result<()> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
-        service.call_activate(conn, x, y).await;
-        Ok(())
+        if T::MENU_ON_ACTIVATE {
+            // a UnknownMethod is required to make ItemIsMenu work on GNOME
+            // https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L803
+            Err(zbus::fdo::Error::UnknownMethod("ItemIsMenu".into()))
+        } else {
+            let mut service = self.0.lock().await; // do NOT use any self methods after this
+            service.call_activate(conn, x, y).await;
+            Ok(())
+        }
     }
 
     async fn secondary_activate(
@@ -140,7 +146,7 @@ impl<T: Tray> StatusNotifierItem<T> {
 
     #[zbus(property)]
     fn item_is_menu(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
+        Ok(T::MENU_ON_ACTIVATE)
     }
 
     #[zbus(property)]

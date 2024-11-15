@@ -20,17 +20,17 @@ Big thanks to @lunixbochs
 - `TrayMethods`
 - `OfflineReason`, see below #Changed
 - `Orientation`
-- `blocking::*`
+- `blocking::*` for blocking API
 
 ## Removed
 
-- `TrayService`
+- `TrayService`, see the new `TrayMethods`
 - Deprecated methods in 0.2
 
 ## Changed
 
 - All methods that should be async are now async
-- `Tray` now requires `Send + 'static`
+- `Tray` now requires `Send + 'static`. If you are using `.spawn`, this won't affect you.
 - `Tray::id` is a required method now, default impl removed
 - `Tray::scroll(&mut self, i32, &str)` -> `Tray::scroll(&mut self, i32, Orientation)`
 - `Tray::watcher_offline` have a new `OfflineReason` argument

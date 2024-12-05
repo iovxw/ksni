@@ -1,4 +1,4 @@
-# 0.3.0 (unreleased)
+# 0.3.0 (2024-12-05)
 
 Replaced dbus-rs with zbus, got async
 

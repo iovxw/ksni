@@ -22,10 +22,12 @@
 //! ```
 //!
 //! [Tokio]: https://tokio.rs
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::sync::{Arc, Weak};
 
 #[cfg(feature = "blocking")]
+#[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
 pub mod blocking;
 mod compat;
 mod dbus_interface;

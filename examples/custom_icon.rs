@@ -3,7 +3,6 @@ use std::sync::LazyLock;
 use image::GenericImageView;
 use ksni::TrayMethods; // provides the spawn method
 
-#[derive(Debug)]
 struct MyTray;
 
 impl ksni::Tray for MyTray {
@@ -14,14 +13,14 @@ impl ksni::Tray for MyTray {
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
         static ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
             let img = image::load_from_memory_with_format(
-                include_bytes!("screenshot_of_example_in_gnome.png"),
+                include_bytes!("custom_icon.png"),
                 image::ImageFormat::Png,
             )
             .expect("valid image");
             let (width, height) = img.dimensions();
             let mut data = img.into_rgba8().into_vec();
             assert_eq!(data.len() % 4, 0);
-            for pixel in data.chunks_mut(4) {
+            for pixel in data.chunks_exact_mut(4) {
                 pixel.rotate_right(1) // rgba to argb
             }
             ksni::Icon {

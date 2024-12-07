@@ -3,11 +3,18 @@ use std::fmt;
 use zbus::zvariant::{Type, Value};
 
 /// Represent the horizontal or vertical orientation of the scroll request
+// In org.freedesktop.StatusNotifierItem it's "horizontal" and "vertical"
+// In org.kde.StatusNotifierItem it's "Horizontal" and "Vertical"
+// GNOME:
+// https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L840-L861
+// KDE:
+// https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L99-L115
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Type, Deserialize)]
 #[zvariant(signature = "s")]
-#[serde(rename_all = "lowercase")]
 pub enum Orientation {
+    #[serde(alias = "horizontal")]
     Horizontal,
+    #[serde(alias = "vertical")]
     Vertical,
 }
 

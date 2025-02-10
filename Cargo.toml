@@ -15,7 +15,7 @@ license = "Unlicense"
 [features]
 default = ["tokio"]
 blocking = ["dep:once_cell"]
-tokio = ["dep:tokio", "zbus/tokio"]
+tokio = ["dep:tokio"]
 async-io = [
     "dep:async-io",
     "dep:async-lock",
@@ -29,10 +29,10 @@ async-io = [
 [dependencies]
 paste = "1"
 futures-util = "0.3"
-zbus = { version = "5", default-features = false }
+zbus = { version = "5", default-features = false, features = ["async-io"] }
 serde = { version = "1", features = ["derive"] }
 
-tokio = { version = "1", features = ["rt", "macros"], optional = true }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"], optional = true }
 
 async-io = { version = "2", optional = true }
 async-lock = { version = "3", optional = true }

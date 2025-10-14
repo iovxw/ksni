@@ -71,24 +71,24 @@ pub(crate) async fn run<T: Tray>(
         .await
         .expect("macro generated dbus Proxy should be valid");
 
-    snw_object
-        .register_status_notifier_item(&name)
-        .await
-        .map_err(|e| {
-            let fdo_err: zbus::fdo::Error = e.into();
-            if let zbus::fdo::Error::ZBus(e) = fdo_err {
-                Error::Dbus(e)
-            } else {
-                Error::Watcher(fdo_err)
-            }
-        })?;
+    let register_result = snw_object.register_status_notifier_item(&name).await;
+    if let Err(e) = register_result {
+        let fdo_err: zbus::fdo::Error = e.into();
 
-    if !snw_object
-        .is_status_notifier_host_registered()
-        .await
-        .map_err(|e| Error::Dbus(e))?
-    {
-        return Err(Error::WontShow);
+        // We don't want to fail on ServiceUnknown as we may later receive an owner change
+        if !matches!(fdo_err, zbus::fdo::Error::ServiceUnknown(_)) {
+            return if let zbus::fdo::Error::ZBus(e) = fdo_err {
+                Err(Error::Dbus(e))
+            } else {
+                Err(Error::Watcher(fdo_err))
+            }
+        } else {
+            // Flag the watcher as offline, it may appear later.
+            let error = Error::Watcher(fdo_err.clone()); // Clone here
+            if !service.lock().await.tray.watcher_offline(OfflineReason::Error(error)) {
+                return Err(Error::Watcher(fdo_err)); // Use original here
+            }
+        }
     }
 
     let dbus_object = DBusProxy::new(&conn)

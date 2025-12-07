@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
@@ -7,12 +8,13 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use paste::paste;
 use zbus::fdo::DBusProxy;
-use zbus::zvariant::{OwnedValue, Str};
+use zbus::zvariant::{OwnedValue, Str, Value};
 use zbus::Connection;
 
 use crate::compat::{self, mpsc, select, Mutex};
 use crate::dbus_interface::{
-    DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_PATH, SNI_PATH,
+    DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE, MENU_PATH,
+    SNI_INTERFACE, SNI_PATH,
 };
 use crate::menu;
 use crate::{Error, HandleReuest, OfflineReason, Tray};
@@ -186,12 +188,11 @@ impl<T: Tray> Service<T> {
             .interface::<_, DbusMenu<T>>(MENU_PATH)
             .await?;
 
+        let mut sni_changed: HashMap<&str, Value> = HashMap::new();
+        let mut menu_changed: HashMap<&str, Value> = HashMap::new();
+
         if self.text_direction_changed() {
-            menu_obj
-                .get_mut()
-                .await
-                .text_direction_changed(menu_obj.signal_emitter())
-                .await?;
+            menu_changed.insert("TextDirection", self.get_text_direction().into());
         }
 
         if self.status_changed() {
@@ -200,40 +201,20 @@ impl<T: Tray> Service<T> {
                 &self.get_status().to_string(),
             )
             .await?;
-            menu_obj
-                .get_mut()
-                .await
-                .status_changed(menu_obj.signal_emitter())
-                .await?;
+            menu_changed.insert("Status", self.get_status().into());
         }
 
         if self.icon_theme_path_changed() {
-            sni_obj
-                .get_mut()
-                .await
-                .icon_theme_path_changed(sni_obj.signal_emitter())
-                .await?;
-            menu_obj
-                .get_mut()
-                .await
-                .icon_theme_path_changed(menu_obj.signal_emitter())
-                .await?;
+            sni_changed.insert("IconThemePath", self.get_icon_theme_path().into());
+            menu_changed.insert("IconThemePath", vec![self.get_icon_theme_path()].into());
         }
 
         if self.category_changed() {
-            sni_obj
-                .get_mut()
-                .await
-                .category_changed(sni_obj.signal_emitter())
-                .await?;
+            sni_changed.insert("Category", self.get_category().into());
         }
 
         if self.window_id_changed() {
-            sni_obj
-                .get_mut()
-                .await
-                .window_id_changed(sni_obj.signal_emitter())
-                .await?;
+            sni_changed.insert("WindowId", self.get_window_id().into());
         }
 
         // TODO: assert the id is consistent
@@ -256,6 +237,26 @@ impl<T: Tray> Service<T> {
         if self.tool_tip_changed() {
             StatusNotifierItem::<T>::new_tool_tip(sni_obj.signal_emitter()).await?;
         }
+
+        if !sni_changed.is_empty() {
+            zbus::fdo::Properties::properties_changed(
+                sni_obj.signal_emitter(),
+                SNI_INTERFACE,
+                sni_changed,
+                Cow::Borrowed(&[]),
+            )
+            .await?;
+        }
+        if !menu_changed.is_empty() {
+            zbus::fdo::Properties::properties_changed(
+                menu_obj.signal_emitter(),
+                MENU_INTERFACE,
+                menu_changed,
+                Cow::Borrowed(&[]),
+            )
+            .await?;
+        }
+
         Ok(())
     }
 

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use zbus::names::InterfaceName;
 use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
 use zbus::{object_server::SignalEmitter, Connection};
 
@@ -11,6 +12,10 @@ use crate::{Icon, ToolTip, Tray};
 
 pub const SNI_PATH: ObjectPath = ObjectPath::from_static_str_unchecked("/StatusNotifierItem");
 pub const MENU_PATH: ObjectPath = ObjectPath::from_static_str_unchecked("/MenuBar");
+pub const SNI_INTERFACE: InterfaceName =
+    InterfaceName::from_static_str_unchecked("org.kde.StatusNotifierItem");
+pub const MENU_INTERFACE: InterfaceName =
+    InterfaceName::from_static_str_unchecked("com.canonical.dbusmenu");
 
 #[zbus::proxy(
     interface = "org.kde.StatusNotifierWatcher",

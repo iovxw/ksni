@@ -1,3 +1,12 @@
+# 0.3.2 (2025-12-07)
+
+## Fixed
+- `ksni::spawn` hang under `async-io` feature
+    This is a regression introduced in 34e4161
+    `spawn_without_dbus_name` is unaffected
+- Deadlock in macro generated properties changed signal
+    All `StatusNotifierItem` properties except `Status` are unaffected
+
 # 0.3.1 (2024-12-07)
 
 - Fixed compatibility of `Orientation` with org.kde.StatusNotifierItem, previously only with org.freedesktop.StatusNotifierItem

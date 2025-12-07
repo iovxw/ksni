@@ -39,6 +39,17 @@ pub(crate) async fn run<T: Tray>(
         .await
         .map_err(|e| Error::Dbus(e))?;
 
+    if cfg!(feature = "async-io") {
+        let executor = conn.executor().clone();
+        // must start the executor before register_status_notifier_item
+        compat::spawn(async move {
+            // won't empty until conn stopped
+            while !executor.is_empty() {
+                executor.tick().await;
+            }
+        });
+    }
+
     let name = if own_name {
         let name = format!(
             "org.kde.StatusNotifierItem-{}-{}",
@@ -55,17 +66,6 @@ pub(crate) async fn run<T: Tray>(
             .expect("unique name should be set after connected")
             .to_string()
     };
-
-    if cfg!(feature = "async-io") {
-        let executor = conn.executor().clone();
-        // must start the executor before register_status_notifier_item
-        compat::spawn(async move {
-            // won't empty until conn stopped
-            while !executor.is_empty() {
-                executor.tick().await;
-            }
-        });
-    }
 
     let snw_object = StatusNotifierWatcherProxy::new(&conn)
         .await

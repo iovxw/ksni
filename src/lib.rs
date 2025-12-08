@@ -24,10 +24,7 @@
 //! [Tokio]: https://tokio.rs
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-use std::{
-    sync::{Arc, Weak},
-    time::Duration,
-};
+use std::sync::{Arc, Weak};
 
 #[cfg(feature = "blocking")]
 #[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
@@ -42,7 +39,9 @@ mod tray;
 pub use menu::{MenuItem, TextDirection};
 pub use tray::{Category, Icon, Orientation, Status, ToolTip};
 
-use crate::compat::{mpsc, oneshot, Mutex};
+use crate::compat::{Mutex, mpsc, oneshot};
+
+pub use service::wait_watcher_online;
 
 /// A system tray, implement this to create your tray
 pub trait Tray: Sized + Send + 'static {
@@ -271,10 +270,6 @@ pub enum Error {
     /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
     /// [Freedesktop System tray]: https://specifications.freedesktop.org/systemtray-spec/0.4/
     WontShow,
-    /// Timeout while waiting for the [StatusNotifierWatcher] to come online
-    /// 
-    /// Only returned by [`TrayMethods::launch`]
-    LaunchTimeout,
 }
 
 impl std::fmt::Display for Error {
@@ -284,7 +279,6 @@ impl std::fmt::Display for Error {
             Dbus(e) => write!(f, "D-Bus connection error: {e}"),
             Watcher(e) => write!(f, "failed to register to the StatusNotifierWatcher: {e}"),
             WontShow => write!(f, "no StatusNotifierHost exists"),
-            LaunchTimeout => write!(f, "timeout while waiting for the StatusNotifierWatcher to come online"),
         }
     }
 }
@@ -296,7 +290,6 @@ impl std::error::Error for Error {
             Dbus(e) => e.source(),
             Watcher(e) => e.source(),
             WontShow => None,
-            LaunchTimeout => None,
         }
     }
 }
@@ -323,22 +316,6 @@ pub trait TrayMethods: Tray + private::Sealed {
     /// [`disable_dbus_name`]: Self::disable_dbus_name
     async fn spawn(self) -> Result<Handle<Self>, Error> {
         self.disable_dbus_name(false).spawn().await
-    }
-
-    /// Run the tray service in background but wait for the system tray to come online first
-    ///
-    /// Unlike [`spawn`] returns immediately, this method will block until the StatusNotifierWatcher
-    /// becomes online, or the timeout is reached.
-    ///
-    /// This is useful if you can't ensure your application is started after the desktop environment is fully
-    /// initialized. Run this method in a separate task if you don't want to block your main task.
-    ///
-    /// Note: this method can't distinguish between the system don't have a SNI implementation and the
-    /// system is just slow to start the StatusNotifierWatcher, so use with caution.
-    ///
-    /// [`spawn`]: Self::spawn
-    async fn launch(self, timeout: Duration) -> Result<Handle<Self>, Error> {
-        self.disable_dbus_name(false).launch(timeout).await
     }
 
     #[doc(hidden)]
@@ -419,25 +396,6 @@ impl<T: Tray> TrayServiceBuilder<T> {
     ///
     /// [`disable_dbus_name`]: Self::disable_dbus_name
     pub async fn spawn(self) -> Result<Handle<T>, Error> {
-        spawn_with_options(self.tray, self.own_name).await
-    }
-
-    /// Run the tray service in background but wait for the system tray to come online first
-    ///
-    /// Unlike [`spawn`] returns immediately, this method will block until the StatusNotifierWatcher
-    /// becomes online, or the timeout is reached.
-    ///
-    /// This is useful if you can't ensure your application is started after the desktop environment is fully
-    /// initialized. Run this method in a separate task if you don't want to block your main task.
-    ///
-    /// Note: this method can't distinguish between the system don't have a SNI implementation and the
-    /// system is just slow to start the StatusNotifierWatcher, so use with caution.
-    ///
-    /// [`spawn`]: Self::spawn
-    pub async fn launch(self, timeout: Duration) -> Result<Handle<T>, Error> {
-        if !service::wait_watcher_online(timeout).await? {
-
-        }
         spawn_with_options(self.tray, self.own_name).await
     }
 

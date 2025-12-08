@@ -20,14 +20,15 @@ async fn main() {
     let my_handle = Arc::new(OnceCell::new());
     let my_handle_clone = my_handle.clone();
     tokio::spawn(async move {
-        match MyTray.launch(Duration::from_secs(5)).await {
-            Err(e) => {
-                eprintln!("System doesn't support SNI: {e}");
-                // setup a fallback tray here
-            }
-            Ok(handle) => {
-                let _ = my_handle_clone.set(handle);
-            }
+        if ksni::wait_watcher_online(Duration::from_secs(5))
+            .await
+            .unwrap_or(false)
+            && let Ok(handle) = MyTray.spawn().await
+        {
+            let _ = my_handle_clone.set(handle);
+        } else {
+            eprintln!("System doesn't support SNI");
+            // setup a fallback tray here
         }
     });
 

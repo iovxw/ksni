@@ -2,21 +2,21 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use paste::paste;
+use zbus::Connection;
 use zbus::fdo::DBusProxy;
 use zbus::names::WellKnownName;
 use zbus::zvariant::{OwnedValue, Str, Value};
-use zbus::Connection;
 
-use crate::compat::{self, mpsc, select, Mutex};
+use crate::compat::{self, Mutex, mpsc, select};
 use crate::dbus_interface::{
-    DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE, MENU_PATH,
-    SNI_INTERFACE, SNI_PATH,
+    DbusMenu, Layout, MENU_INTERFACE, MENU_PATH, SNI_INTERFACE, SNI_PATH, StatusNotifierItem,
+    StatusNotifierWatcherProxy,
 };
 use crate::menu;
 use crate::{Error, HandleReuest, OfflineReason, Tray};
@@ -159,7 +159,7 @@ pub(crate) async fn run<T: Tray>(
     Ok(service_loop)
 }
 
-pub(crate) async fn wait_watcher_online(timeout: Duration) -> Result<bool, Error> {
+pub async fn wait_watcher_online(timeout: Duration) -> Result<bool, Error> {
     let conn = zbus::Connection::session()
         .await
         .map_err(|e| Error::Dbus(e))?;

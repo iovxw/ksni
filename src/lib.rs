@@ -309,13 +309,18 @@ pub trait TrayMethods: Tray + private::Sealed {
 
     /// Run the tray service in background
     ///
-    /// If your application will be running in a sandbox, see [`spawn_without_dbus_name`]
+    /// If your application will be running in a sandbox, set [`disable_dbus_name`] first
     ///
-    /// [`spawn_without_dbus_name`]: Self::spawn_without_dbus_name
+    /// [`disable_dbus_name`]: Self::disable_dbus_name
     async fn spawn(self) -> Result<Handle<Self>, Error> {
-        self.spawn_with_name(true).await
+        self.disable_dbus_name(false).spawn().await
     }
 
+    #[doc(hidden)]
+    #[deprecated(
+        note = "use `disable_dbus_name(true).spawn()` instead",
+        since = "0.3.4"
+    )]
     /// Run the tray service in background, but without a dbus well-known name
     ///
     /// This violates the [StatusNotifierItem] specification, but is required in some sandboxed
@@ -325,20 +330,39 @@ pub trait TrayMethods: Tray + private::Sealed {
     ///
     /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
     async fn spawn_without_dbus_name(self) -> Result<Handle<Self>, Error> {
-        self.spawn_with_name(false).await
+        self.disable_dbus_name(true).spawn().await
     }
 
-    // sealed trait, safe to add private methods
-    #[doc(hidden)]
-    async fn spawn_with_name(self, own_name: bool) -> Result<Handle<Self>, Error> {
-        let (handle_tx, handle_rx) = mpsc::unbounded_channel();
-        let service = service::Service::new(self);
-        let service_loop = service::run(service.clone(), handle_rx, own_name).await?;
-        compat::spawn(service_loop);
-        Ok(Handle {
-            service: Arc::downgrade(&service),
-            sender: handle_tx,
-        })
+    /// Disable owning a D-Bus well-known name (`StatusNotifierItem-PID-ID`) for the tray service
+    ///
+    /// This violates the [StatusNotifierItem] specification, but is required in some sandboxed
+    /// environments (e.g., flatpak).
+    ///
+    /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
+    ///
+    /// # Examples
+    /// ```
+    /// # use ksni::TrayMethods;
+    /// # struct MyTray;
+    /// # impl ksni::Tray for MyTray {
+    /// # fn id(&self) -> String { "my_tray".into() }
+    /// # }
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let handle = MyTray
+    ///     .disable_dbus_name(true)
+    ///     .spawn()
+    ///     .await
+    ///     .expect("system should have a working SNI implementation");
+    /// # }
+    /// ```
+    ///
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
+    fn disable_dbus_name(self, disable: bool) -> TrayServiceBuilder<Self> {
+        TrayServiceBuilder {
+            tray: self,
+            own_name: !disable,
+        }
     }
 }
 impl<T: Tray> TrayMethods for T {}
@@ -346,12 +370,73 @@ impl<T: Tray> TrayMethods for T {}
 fn _assert_tray_methods_returned_future_is_send<T: Tray + Clone>(x: T) {
     fn assert_send<T: Send>(_: T) {}
     assert_send(x.clone().spawn());
+    #[allow(deprecated)]
     assert_send(x.clone().spawn_without_dbus_name());
 }
 
 mod private {
     pub trait Sealed {}
     impl<T: crate::Tray> Sealed for T {}
+}
+
+/// Builder to customize tray service
+///
+/// All methods are equivalent to those in [`TrayMethods`]
+pub struct TrayServiceBuilder<T: Tray> {
+    tray: T,
+    own_name: bool,
+}
+
+impl<T: Tray> TrayServiceBuilder<T> {
+    /// Run the tray service in background
+    ///
+    /// If your application will be running in a sandbox, set [`disable_dbus_name`] first
+    ///
+    /// [`disable_dbus_name`]: Self::disable_dbus_name
+    pub async fn spawn(self) -> Result<Handle<T>, Error> {
+        spawn_with_options(self.tray, self.own_name).await
+    }
+
+    /// Disable owning a D-Bus well-known name (`StatusNotifierItem-PID-ID`) for the tray service
+    ///
+    /// This violates the [StatusNotifierItem] specification, but is required in some sandboxed
+    /// environments (e.g., flatpak).
+    ///
+    /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
+    ///
+    /// # Examples
+    /// ```
+    /// # use ksni::TrayMethods;
+    /// # struct MyTray;
+    /// # impl ksni::Tray for MyTray {
+    /// # fn id(&self) -> String { "my_tray".into() }
+    /// # }
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let handle = MyTray
+    ///     .disable_dbus_name(true)
+    ///     .spawn()
+    ///     .await
+    ///     .expect("system should have a working SNI implementation");
+    /// # }
+    /// ```
+    ///
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
+    pub fn disable_dbus_name(mut self, disable: bool) -> Self {
+        self.own_name = !disable;
+        self
+    }
+}
+
+async fn spawn_with_options<T: Tray>(tray: T, own_name: bool) -> Result<Handle<T>, Error> {
+    let (handle_tx, handle_rx) = mpsc::unbounded_channel();
+    let service = service::Service::new(tray);
+    let service_loop = service::run(service.clone(), handle_rx, own_name).await?;
+    compat::spawn(service_loop);
+    Ok(Handle {
+        service: Arc::downgrade(&service),
+        sender: handle_tx,
+    })
 }
 
 pub(crate) enum HandleReuest {

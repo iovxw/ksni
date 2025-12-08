@@ -7,6 +7,7 @@ mod tokio {
 
     pub use tokio::select;
     pub use tokio::sync::Mutex;
+    pub use tokio::time::sleep;
 
     // remove the return value to compat with async-io
     pub fn spawn<F>(future: F)
@@ -46,6 +47,7 @@ pub use tokio::*;
 #[cfg(feature = "async-io")]
 mod async_io {
     use std::future::Future;
+    use futures_util::future::{FusedFuture, FutureExt};
 
     use async_executor::Executor;
     use once_cell::sync::OnceCell;
@@ -57,6 +59,10 @@ mod async_io {
 
     pub use async_io::block_on;
     pub use async_lock::Mutex;
+
+    pub fn sleep(duration: std::time::Duration) -> impl FusedFuture<Output = ()> {
+        async_io::Timer::after(duration).map(|_| ()).fuse()
+    }
 
     pub fn spawn<F>(future: F)
     where
@@ -87,6 +93,7 @@ mod async_io {
         ($($patten:pat = $exp:expr => $blk:block)*) => {
             futures_util::select! {
                 $( v = $exp => {
+                    #[allow(irrefutable_let_patterns)]
                     let $patten = v else { continue };
                     $blk
                 } )*

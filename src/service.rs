@@ -4,10 +4,12 @@ use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::StreamExt;
 use paste::paste;
 use zbus::fdo::DBusProxy;
+use zbus::names::WellKnownName;
 use zbus::zvariant::{OwnedValue, Str, Value};
 use zbus::Connection;
 
@@ -155,6 +157,50 @@ pub(crate) async fn run<T: Tray>(
         }
     };
     Ok(service_loop)
+}
+
+pub(crate) async fn wait_watcher_online(timeout: Duration) -> Result<bool, Error> {
+    let conn = zbus::Connection::session()
+        .await
+        .map_err(|e| Error::Dbus(e))?;
+    let dbus_object = DBusProxy::new(&conn)
+        .await
+        .expect("built-in Proxy should be valid");
+
+    if dbus_object
+        .name_has_owner(
+            WellKnownName::from_static_str_unchecked("org.kde.StatusNotifierWatcher").into(),
+        )
+        .await
+        .map_err(|fdo_err| {
+            if let zbus::fdo::Error::ZBus(e) = fdo_err {
+                Error::Dbus(e)
+            } else {
+                Error::Watcher(fdo_err) // FIXME: the mapping is not accurate but this error case is rare
+            }
+        })?
+    {
+        return Ok(true);
+    }
+
+    let mut name_changed_signal = dbus_object
+        .receive_name_owner_changed_with_args(&[(0, "org.kde.StatusNotifierWatcher")])
+        .await
+        .map_err(|e| Error::Dbus(e))?;
+
+    loop {
+        select! {
+            Some(event) = name_changed_signal.next() => {
+                let args = event.args().expect("dbus daemon should follow the specification");
+                if args.new_owner.is_some() {
+                    return Ok(true);
+                }
+            }
+            () = compat::sleep(timeout) => {
+                return Ok(false);
+            }
+        }
+    }
 }
 
 pub(crate) struct Service<T> {

@@ -341,14 +341,13 @@ pub trait TrayMethods: Tray + private::Sealed {
     /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
     ///
     /// # Examples
-    /// ```
+    /// ```no_run
     /// # use ksni::TrayMethods;
     /// # struct MyTray;
     /// # impl ksni::Tray for MyTray {
     /// # fn id(&self) -> String { "my_tray".into() }
     /// # }
-    /// # #[tokio::main]
-    /// # async fn main() {
+    /// # async fn test() {
     /// let handle = MyTray
     ///     .disable_dbus_name(true)
     ///     .spawn()
@@ -405,14 +404,13 @@ impl<T: Tray> TrayServiceBuilder<T> {
     /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
     ///
     /// # Examples
-    /// ```
+    /// ```no_run
     /// # use ksni::TrayMethods;
     /// # struct MyTray;
     /// # impl ksni::Tray for MyTray {
     /// # fn id(&self) -> String { "my_tray".into() }
     /// # }
-    /// # #[tokio::main]
-    /// # async fn main() {
+    /// # async fn test() {
     /// let handle = MyTray
     ///     .disable_dbus_name(true)
     ///     .spawn()

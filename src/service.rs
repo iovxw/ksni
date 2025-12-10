@@ -81,7 +81,12 @@ pub(crate) async fn run<T: Tray>(
         if matches!(fdo_err, zbus::fdo::Error::ServiceUnknown(_)) && assume_sni_available {
             // Flag the watcher as offline, it may appear later.
             let error = Error::Watcher(fdo_err.clone()); // Clone here
-            if !service.lock().await.tray.watcher_offline(OfflineReason::Error(error)) {
+            if !service
+                .lock()
+                .await
+                .tray
+                .watcher_offline(OfflineReason::Error(error))
+            {
                 return Err(Error::Watcher(fdo_err)); // Use original here
             }
         } else {
@@ -89,7 +94,7 @@ pub(crate) async fn run<T: Tray>(
                 Err(Error::Dbus(e))
             } else {
                 Err(Error::Watcher(fdo_err))
-            }
+            };
         }
     }
 

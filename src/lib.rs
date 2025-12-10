@@ -361,6 +361,28 @@ pub trait TrayMethods: Tray + private::Sealed {
         TrayServiceBuilder {
             tray: self,
             own_name: !disable,
+            assume_sni_available: false,
+        }
+    }
+
+    /// Assume the system has a working StatusNotifierItem implementation
+    ///
+    /// When `true`, `Error::Watcher(ServiceUnknown("The name org.kde.StatusNotifierWatcher was not provided by any .service files"))`
+    /// (message may vary by D-Bus implementation) and [`Error::WontShow`] are treated as "soft
+    /// errors": they are routed to [`Tray::watcher_offline`] instead of causing [`spawn()`] to return
+    /// immediately.
+    ///
+    /// Useful when your application may start before the desktop environment is fully initialized,
+    /// but it also means the tray may never appear if SNI support is truly absent.
+    ///
+    /// Use with caution.
+    ///
+    /// [`spawn()`]: Self::spawn
+    fn assume_sni_available(self, assume_available: bool) -> TrayServiceBuilder<Self> {
+        TrayServiceBuilder {
+            tray: self,
+            own_name: true,
+            assume_sni_available: assume_available,
         }
     }
 }
@@ -384,6 +406,7 @@ mod private {
 pub struct TrayServiceBuilder<T: Tray> {
     tray: T,
     own_name: bool,
+    assume_sni_available: bool,
 }
 
 impl<T: Tray> TrayServiceBuilder<T> {
@@ -393,7 +416,7 @@ impl<T: Tray> TrayServiceBuilder<T> {
     ///
     /// [`disable_dbus_name`]: Self::disable_dbus_name
     pub async fn spawn(self) -> Result<Handle<T>, Error> {
-        spawn_with_options(self.tray, self.own_name).await
+        spawn_with_options(self.tray, self.own_name, self.assume_sni_available).await
     }
 
     /// Disable owning a D-Bus well-known name (`StatusNotifierItem-PID-ID`) for the tray service
@@ -420,16 +443,43 @@ impl<T: Tray> TrayServiceBuilder<T> {
     /// ```
     ///
     /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
-    pub fn disable_dbus_name(mut self, disable: bool) -> Self {
-        self.own_name = !disable;
-        self
+    pub fn disable_dbus_name(self, disable: bool) -> Self {
+        Self {
+            own_name: !disable,
+            ..self
+        }
+    }
+
+    /// Assume the system has a working StatusNotifierItem implementation
+    ///
+    /// When `true`, `Error::Watcher(ServiceUnknown("The name org.kde.StatusNotifierWatcher was not provided by any .service files"))`
+    /// (message may vary by D-Bus implementation) and [`Error::WontShow`] are treated as "soft
+    /// errors": they are routed to [`Tray::watcher_offline`] instead of causing [`spawn()`] to return
+    /// immediately.
+    ///
+    /// Useful when your application may start before the desktop environment is fully initialized,
+    /// but it also means the tray may never appear if SNI support is truly absent.
+    ///
+    /// Use with caution.
+    ///
+    /// [`spawn()`]: Self::spawn
+    pub fn assume_sni_available(self, assume_available: bool) -> Self {
+        Self {
+            assume_sni_available: assume_available,
+            ..self
+        }
     }
 }
 
-async fn spawn_with_options<T: Tray>(tray: T, own_name: bool) -> Result<Handle<T>, Error> {
+async fn spawn_with_options<T: Tray>(
+    tray: T,
+    own_name: bool,
+    assume_sni_available: bool,
+) -> Result<Handle<T>, Error> {
     let (handle_tx, handle_rx) = mpsc::unbounded_channel();
     let service = service::Service::new(tray);
-    let service_loop = service::run(service.clone(), handle_rx, own_name).await?;
+    let service_loop =
+        service::run(service.clone(), handle_rx, own_name, assume_sni_available).await?;
     compat::spawn(service_loop);
     Ok(Handle {
         service: Arc::downgrade(&service),

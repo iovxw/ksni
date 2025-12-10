@@ -25,6 +25,7 @@ pub(crate) async fn run<T: Tray>(
     service: Arc<Mutex<Service<T>>>,
     mut handle_rx: mpsc::UnboundedReceiver<HandleReuest>,
     own_name: bool,
+    assume_sni_available: bool,
 ) -> Result<impl Future<Output = ()>, Error> {
     let sni_obj = StatusNotifierItem::new(service.clone());
     let menu_obj = DbusMenu::new(service.clone());
@@ -77,20 +78,28 @@ pub(crate) async fn run<T: Tray>(
     if let Err(e) = register_result {
         let fdo_err: zbus::fdo::Error = e.into();
 
-        // We don't want to fail on ServiceUnknown as we may later receive an owner change
-        if !matches!(fdo_err, zbus::fdo::Error::ServiceUnknown(_)) {
-            return if let zbus::fdo::Error::ZBus(e) = fdo_err {
-                Err(Error::Dbus(e))
-            } else {
-                Err(Error::Watcher(fdo_err))
-            }
-        } else {
+        if matches!(fdo_err, zbus::fdo::Error::ServiceUnknown(_)) && assume_sni_available {
             // Flag the watcher as offline, it may appear later.
             let error = Error::Watcher(fdo_err.clone()); // Clone here
             if !service.lock().await.tray.watcher_offline(OfflineReason::Error(error)) {
                 return Err(Error::Watcher(fdo_err)); // Use original here
             }
+        } else {
+            return if let zbus::fdo::Error::ZBus(e) = fdo_err {
+                Err(Error::Dbus(e))
+            } else {
+                Err(Error::Watcher(fdo_err))
+            }
         }
+    }
+
+    if !assume_sni_available // TODO: a better check?
+        && !snw_object
+            .is_status_notifier_host_registered()
+            .await
+            .map_err(|e| Error::Dbus(e))?
+    {
+        return Err(Error::WontShow);
     }
 
     let dbus_object = DBusProxy::new(&conn)

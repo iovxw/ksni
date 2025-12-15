@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use paste::paste;
+use pastey::paste;
 use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Str, Value};
 use zbus::Connection;

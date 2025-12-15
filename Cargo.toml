@@ -27,7 +27,7 @@ async-io = [
 ]
 
 [dependencies]
-paste = "1"
+pastey = "0.2"
 futures-util = "0.3"
 zbus = { version = "5", default-features = false }
 serde = { version = "1", features = ["derive"] }

@@ -109,6 +109,22 @@ pub struct StandardItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
+    /// Callback invoked when the item is activated
+    ///
+    /// The first parameter is a mutable reference to the [`crate::Tray`] that
+    /// owns this menu. Any changes you make to it inside the callback are
+    /// propagated back to the menu after this callback returns.
+    ///
+    /// The primary purpose of this callback is to notify your application
+    /// that the user activated this menu item, so avoid blocking operations
+    /// here or the menu will freeze. Hand off work to your main application
+    /// logic (e.g., via channels; most unbounded channels provide a non-blocking send)
+    /// or `spawn` a new task and keep this handler lightweight. If you need to
+    /// update the tray after doing work elsewhere, call [`crate::Handle::update`].
+    ///
+    /// See the [examples/realworld.rs] for typical usage patterns.
+    /// 
+    /// [examples/realworld.rs]: https://github.com/iovxw/ksni/blob/master/examples/realworld.rs
     pub activate: Box<dyn Fn(&mut T) + Send>,
 }
 
@@ -183,6 +199,7 @@ pub struct SubMenu<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
+    /// List of submenu items
     pub submenu: Vec<MenuItem<T>>,
 }
 
@@ -224,7 +241,7 @@ impl<T> From<SubMenu<T>> for RawMenuItem<T> {
     }
 }
 
-/// Menu item, checkable
+/// Menu item, but checkable
 pub struct CheckmarkItem<T> {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -255,6 +272,41 @@ pub struct CheckmarkItem<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
+    /// Callback invoked when the item is activated
+    ///
+    /// The first parameter is a mutable reference to the [`crate::Tray`] that
+    /// owns this menu. Any changes you make to it inside the callback are
+    /// propagated back to the menu after this callback returns.
+    ///
+    /// The primary purpose of this callback is to notify your application
+    /// that the user activated this menu item, so avoid blocking operations
+    /// here or the menu will freeze. Hand off work to your main application
+    /// logic (e.g., via channels; most unbounded channels provide a non-blocking send)
+    /// or `spawn` a new task and keep this handler lightweight. If you need to
+    /// update the tray after doing work elsewhere, call [`crate::Handle::update`].
+    ///
+    /// # Examples
+    /// ```
+    /// struct MyTray {
+    ///     checked: bool,
+    /// }
+    /// impl ksni::Tray for MyTray {
+    /// #   fn id(&self) -> String { "MyTray".into() }
+    ///     fn menu(&self) -> Vec<ksni::menu::MenuItem<Self>> {
+    ///         vec![
+    ///             ksni::menu::CheckmarkItem {
+    ///                 label: "Check me".into(),
+    ///                 checked: self.checked,
+    ///                 activate: Box::new(|tray: &mut Self| {
+    ///                     tray.checked = !tray.checked;
+    ///                 }),
+    ///                 ..Default::default()
+    ///             }
+    ///             .into(),
+    ///         ]
+    ///     }
+    /// }
+    /// ```
     pub activate: Box<dyn Fn(&mut T) + Send>,
 }
 
@@ -306,10 +358,53 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
     }
 }
 
-/// Menu item, contains [`RadioItem`]
+/// Menu item, a group of [`RadioItem`]s
 pub struct RadioGroup<T> {
+    /// Index of the current selected radio item
     pub selected: usize,
+    /// Callback invoked when an item is selected
+    /// 
+    /// The first parameter is a mutable reference to the [`crate::Tray`] that
+    /// owns this menu. Any changes you make to it inside the callback are
+    /// propagated back to the menu after this callback returns.
+    /// 
+    /// The second parameter is the index of the user clicked radio item.
+    ///
+    /// The primary purpose of this callback is to notify your application
+    /// that the user activated this menu item, so avoid blocking operations
+    /// here or the menu will freeze. Hand off work to your main application
+    /// logic (e.g., via channels; most unbounded channels provide a non-blocking send)
+    /// or `spawn` a new task and keep this handler lightweight. If you need to
+    /// update the tray after doing work elsewhere, call [`crate::Handle::update`].
+    ///
+    /// # Examples
+    /// ```
+    /// struct MyTray {
+    ///     selected: usize,
+    /// }
+    /// impl ksni::Tray for MyTray {
+    /// #   fn id(&self) -> String { "MyTray".into() }
+    ///     fn menu(&self) -> Vec<ksni::menu::MenuItem<Self>> {
+    ///         vec![
+    ///             ksni::menu::RadioGroup {
+    ///                 selected: self.selected,
+    ///                 select: Box::new(|tray: &mut Self, index: usize| {
+    ///                     tray.selected = index;
+    ///                 }),
+    ///                 options: vec![
+    ///                     ksni::menu::RadioItem {
+    ///                         label: "Option 1".into(),
+    ///                         ..Default::default()
+    ///                     },
+    ///                 ],
+    ///             }
+    ///             .into(),
+    ///         ]
+    ///     }
+    /// }
+    /// ```
     pub select: Box<dyn Fn(&mut T, usize) + Send>,
+    /// List of radio items
     pub options: Vec<RadioItem>,
 }
 
@@ -329,7 +424,9 @@ impl<T> From<RadioGroup<T>> for MenuItem<T> {
     }
 }
 
-/// Items of [`RadioGroup`]
+/// Not a menu item, but items of [`RadioGroup`]
+/// 
+/// See [`RadioGroup`] for details
 pub struct RadioItem {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a
@@ -709,6 +806,8 @@ impl From<ToggleState> for OwnedValue {
     }
 }
 
+/// How the menuitem feels the information it's displaying to the
+/// user should be presented.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Disposition {
     /// A standard menu item

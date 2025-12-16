@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use futures_util::StreamExt;
+use futures_util::{StreamExt, future::Either};
 use paste::paste;
 use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Str, Value};
@@ -80,14 +80,15 @@ pub(crate) async fn run<T: Tray>(
 
         if matches!(fdo_err, zbus::fdo::Error::ServiceUnknown(_)) && assume_sni_available {
             // Flag the watcher as offline, it may appear later.
-            let error = Error::Watcher(fdo_err.clone()); // Clone here
+            // Also ask the tray whether to continue or not
             if !service
                 .lock()
                 .await
                 .tray
-                .watcher_offline(OfflineReason::Error(error))
+                .watcher_offline(OfflineReason::Error(Error::Watcher(fdo_err)))
             {
-                return Err(Error::Watcher(fdo_err)); // Use original here
+                // The error was handled by watcher_offline, just Ok()
+                return Ok(Either::Left(async {}));
             }
         } else {
             return if let zbus::fdo::Error::ZBus(e) = fdo_err {
@@ -168,7 +169,7 @@ pub(crate) async fn run<T: Tray>(
             }
         }
     };
-    Ok(service_loop)
+    Ok(Either::Right(service_loop))
 }
 
 pub(crate) struct Service<T> {

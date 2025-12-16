@@ -19,14 +19,14 @@ async fn system_has_sni() -> bool {
 
 #[tokio::test]
 async fn assume_sni_available() {
-    static ONNFILINE_REASON: Mutex<Option<ksni::OfflineReason>> = Mutex::new(None);
+    static OFFLINE_REASON: Mutex<Option<ksni::OfflineReason>> = Mutex::new(None);
     struct MyTray;
     impl ksni::Tray for MyTray {
         fn id(&self) -> String {
             std::any::type_name::<Self>().into()
         }
         fn watcher_offline(&self, reason: ksni::OfflineReason) -> bool {
-            ONNFILINE_REASON.lock().unwrap().replace(reason);
+            OFFLINE_REASON.lock().unwrap().replace(reason);
             false
         }
     }
@@ -37,10 +37,10 @@ async fn assume_sni_available() {
     handle.shutdown().await;
 
     if system_has_sni().await {
-        assert!(ONNFILINE_REASON.lock().unwrap().is_none());
+        assert!(OFFLINE_REASON.lock().unwrap().is_none());
     } else {
         assert!(matches!(
-            *ONNFILINE_REASON.lock().unwrap(),
+            *OFFLINE_REASON.lock().unwrap(),
             Some(ksni::OfflineReason::Error(ksni::Error::Watcher(
                 zbus::fdo::Error::ServiceUnknown(_)
             )))

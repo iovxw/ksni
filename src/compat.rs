@@ -81,7 +81,7 @@ mod async_io {
             .detach()
     }
 
-    #[cfg(feature = "async-io")]
+    #[doc(hidden)]
     #[macro_export]
     macro_rules! select {
         ($($patten:pat = $exp:expr => $blk:block)*) => {

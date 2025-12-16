@@ -313,7 +313,7 @@ pub trait TrayMethods: Tray + private::Sealed {
     ///
     /// [`disable_dbus_name`]: Self::disable_dbus_name
     async fn spawn(self) -> Result<Handle<Self>, Error> {
-        self.disable_dbus_name(false).spawn().await
+        TrayServiceBuilder::new(self).spawn().await
     }
 
     #[doc(hidden)]
@@ -358,11 +358,7 @@ pub trait TrayMethods: Tray + private::Sealed {
     ///
     /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
     fn disable_dbus_name(self, disable: bool) -> TrayServiceBuilder<Self> {
-        TrayServiceBuilder {
-            tray: self,
-            own_name: !disable,
-            assume_sni_available: false,
-        }
+        TrayServiceBuilder::new(self).disable_dbus_name(disable)
     }
 
     /// Assume the system has a working StatusNotifierItem implementation
@@ -379,11 +375,7 @@ pub trait TrayMethods: Tray + private::Sealed {
     ///
     /// [`spawn()`]: Self::spawn
     fn assume_sni_available(self, assume_available: bool) -> TrayServiceBuilder<Self> {
-        TrayServiceBuilder {
-            tray: self,
-            own_name: true,
-            assume_sni_available: assume_available,
-        }
+        TrayServiceBuilder::new(self).assume_sni_available(assume_available)
     }
 }
 impl<T: Tray> TrayMethods for T {}
@@ -403,6 +395,8 @@ mod private {
 /// Builder to customize tray service
 ///
 /// All methods are equivalent to those in [`TrayMethods`]
+///
+/// Should not be constructed directly, use [`TrayMethods`] instead.
 pub struct TrayServiceBuilder<T: Tray> {
     tray: T,
     own_name: bool,
@@ -410,6 +404,16 @@ pub struct TrayServiceBuilder<T: Tray> {
 }
 
 impl<T: Tray> TrayServiceBuilder<T> {
+    /// Create a new builder with default options
+    /// DO NOT PUBLIC
+    fn new(tray: T) -> Self {
+        Self {
+            tray,
+            own_name: true,
+            assume_sni_available: false,
+        }
+    }
+
     /// Run the tray service in background
     ///
     /// If your application will be running in a sandbox, set [`disable_dbus_name`] first

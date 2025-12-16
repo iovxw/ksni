@@ -7,6 +7,9 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable, nightly]
+        feature-flags:
+          - '--features blocking' # tokio
+          - '--no-default-features --features async-io,blocking' # smol
         include:
         # Allow failures on nightly
         - rust: nightly
@@ -22,5 +25,5 @@ jobs:
         rust-version: ${{ matrix.rust }}
     - uses: actions/checkout@master
     - name: Run Tests
-      run: cargo test --verbose
+      run: cargo test --verbose ${{ matrix.feature-flags }}
       continue-on-error: ${{ matrix.can-fail }}

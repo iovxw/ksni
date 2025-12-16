@@ -46,6 +46,7 @@ smol = "2"
 smol-macros = "0.1"
 macro_rules_attribute = "0.2"
 image = "0.25"
+zbus = { version = "5", default-features = false, features = ["blocking-api"] }
 
 [[example]]
 name = "async"
@@ -65,8 +66,14 @@ required-features = ["tokio"]
 doc-scrape-examples = true
 
 [[test]]
-name = "assume_sni_available"
+name = "tokio"
 required-features = ["tokio"]
+[[test]]
+name = "smol"
+required-features = ["async-io"]
+[[test]]
+name = "blocking"
+required-features = ["blocking"]
 
 [package.metadata.docs.rs]
 features = ["blocking"]

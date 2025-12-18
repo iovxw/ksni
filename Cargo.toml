@@ -47,6 +47,7 @@ smol-macros = "0.1"
 macro_rules_attribute = "0.2"
 image = "0.25"
 zbus = { version = "5", default-features = false, features = ["blocking-api"] }
+ashpd = "0.12"
 
 [[example]]
 name = "async"

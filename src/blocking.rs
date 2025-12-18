@@ -43,6 +43,9 @@ pub trait TrayMethods: Tray + private::Sealed {
     ///
     /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
     ///
+    /// To determine whether the application is running in a sandbox, use
+    /// [ashpd::is_sandboxed()](https://docs.rs/ashpd/0.12.0/ashpd/fn.is_sandboxed.html).
+    ///
     /// # Examples
     /// ```no_run
     /// # use ksni::blocking::TrayMethods;
@@ -118,6 +121,9 @@ impl<T: Tray> TrayServiceBuilder<T> {
     /// environments (e.g., flatpak).
     ///
     /// See <https://chromium-review.googlesource.com/c/chromium/src/+/4179380>
+    ///
+    /// To determine whether the application is running in a sandbox, use
+    /// [ashpd::is_sandboxed()](https://docs.rs/ashpd/0.12.0/ashpd/fn.is_sandboxed.html).
     ///
     /// # Examples
     /// ```no_run

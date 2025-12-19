@@ -66,7 +66,7 @@ pub trait TrayMethods: Tray + private::Sealed {
         TrayServiceBuilder::new(self).disable_dbus_name(disable)
     }
 
-    /// Assume the system has a working StatusNotifierItem implementation
+    /// Assume the system has a working [StatusNotifierItem] implementation
     ///
     /// When `true`, `Error::Watcher(ServiceUnknown("The name org.kde.StatusNotifierWatcher was not provided by any .service files"))`
     /// (message may vary by D-Bus implementation) and [`Error::WontShow`] are treated as "soft
@@ -79,6 +79,7 @@ pub trait TrayMethods: Tray + private::Sealed {
     /// Use with caution.
     ///
     /// [`spawn()`]: Self::spawn
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
     fn assume_sni_available(self, assume_available: bool) -> TrayServiceBuilder<Self> {
         TrayServiceBuilder::new(self).assume_sni_available(assume_available)
     }
@@ -148,7 +149,7 @@ impl<T: Tray> TrayServiceBuilder<T> {
         }
     }
 
-    /// Assume the system has a working StatusNotifierItem implementation
+    /// Assume the system has a working [StatusNotifierItem] implementation
     ///
     /// When `true`, `Error::Watcher(ServiceUnknown("The name org.kde.StatusNotifierWatcher was not provided by any .service files"))`
     /// (message may vary by D-Bus implementation) and [`Error::WontShow`] are treated as "soft
@@ -161,6 +162,7 @@ impl<T: Tray> TrayServiceBuilder<T> {
     /// Use with caution.
     ///
     /// [`spawn()`]: Self::spawn
+    /// [StatusNotifierItem]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem/
     pub fn assume_sni_available(self, assume_available: bool) -> Self {
         Self {
             assume_sni_available: assume_available,

@@ -65,6 +65,10 @@ doc-scrape-examples = true
 name = "custom_icon"
 required-features = ["tokio"]
 doc-scrape-examples = true
+[[example]]
+name = "realworld"
+required-features = ["tokio"]
+doc-scrape-examples = true
 
 [[test]]
 name = "tokio"

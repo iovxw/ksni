@@ -1,3 +1,24 @@
+# 0.3.3 (2025-12-20)
+
+## Added
+- A new transparent builder pattern to configure `spawn` options, which contains:
+  - `TrayServiceBuilder`: just a helper
+  - `TrayMethods::disable_dbus_name`: replacement for `TrayMethods::spawn_without_dbus_name`
+  e.g. `tray.spawn_without_dbus_name()` -> `tray.disable_dbus_name(true).spawn()`
+- `TrayMethods::assume_sni_available`: allow you to setup the tray before the desktop environment
+  is fully initialized. Thanks to @FrostyCoolSlug
+- Blocking version of above API
+- More documentation
+- More tests
+
+## Changed
+- Switch to pastey crate: https://rustsec.org/advisories/RUSTSEC-2024-0436 by @NyCodeGHG
+
+## Deprecated
+- `TrayMethods::spawn_without_dbus_name`
+- `blocking::TrayMethods::spawn_without_dbus_name`
+Will be removed in the next major release.
+
 # 0.3.2 (2025-12-07)
 
 ## Fixed
@@ -9,7 +30,8 @@
 
 # 0.3.1 (2024-12-07)
 
-- Fixed compatibility of `Orientation` with org.kde.StatusNotifierItem, previously only with org.freedesktop.StatusNotifierItem
+- Fixed compatibility of `Orientation` with org.kde.StatusNotifierItem, previously only with
+  org.freedesktop.StatusNotifierItem
 - Documentation updates
 
 # 0.3.0 (2024-12-05)

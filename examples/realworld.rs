@@ -115,7 +115,7 @@ async fn main() -> std::io::Result<()> {
         notifier,
     };
     let handle = tray
-        .disable_dbus_name(ashpd::is_sandboxed().await)
+        .disable_dbus_name(ashpd::is_sandboxed())
         .spawn()
         .await
         .unwrap();

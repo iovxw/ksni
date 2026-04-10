@@ -71,6 +71,7 @@ pub(crate) async fn run<T: Tray>(
     };
 
     let snw_object = StatusNotifierWatcherProxy::builder(&conn)
+        // property caching internally calls DBus GetAll, which is not allowed under Snap strict confinement
         .cache_properties(zbus::proxy::CacheProperties::No)
         .build()
         .await

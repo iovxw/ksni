@@ -70,7 +70,9 @@ pub(crate) async fn run<T: Tray>(
             .to_string()
     };
 
-    let snw_object = StatusNotifierWatcherProxy::new(&conn)
+    let snw_object = StatusNotifierWatcherProxy::builder(&conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
         .await
         .expect("macro generated dbus Proxy should be valid");
 

@@ -1,3 +1,8 @@
+# 0.3.4 (2026-04-10)
+
+## Fixed
+- Compatibility with Snap strict confinement (#37) by @sniper1720
+
 # 0.3.3 (2025-12-20)
 
 ## Added

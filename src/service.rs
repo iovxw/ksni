@@ -458,7 +458,11 @@ impl<T: Tray> Service<T> {
     ) -> zbus::fdo::Result<()> {
         match event_id {
             "clicked" => {
-                assert_ne!(id, 0, "ROOT MENU ITEM CLICKED");
+                if id == 0 {
+                    return Err(zbus::fdo::Error::InvalidArgs(
+                        "root menu item is not clickable".to_string(),
+                    ));
+                }
                 let index = self
                     .id2index(id)
                     .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))?;
@@ -562,4 +566,49 @@ fn hash_of<T: Hash>(v: T) -> u64 {
     let mut hasher = DefaultHasher::new();
     v.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(all(test, feature = "tokio"))]
+mod tests {
+    use super::Service;
+    use crate::{menu::StandardItem, Tray};
+    use zbus::zvariant::OwnedValue;
+
+    #[derive(Clone, Default)]
+    struct TestTray;
+
+    impl Tray for TestTray {
+        fn id(&self) -> String {
+            "test-tray".into()
+        }
+
+        fn menu(&self) -> Vec<crate::MenuItem<Self>> {
+            vec![StandardItem {
+                label: "item".into(),
+                ..Default::default()
+            }
+            .into()]
+        }
+    }
+
+    #[tokio::test]
+    async fn root_menu_clicked_returns_invalid_args() {
+        let service = Service::new(TestTray);
+        let conn = zbus::Connection::session().await.unwrap();
+        let mut service = service.lock().await;
+
+        let err = service
+            .event(
+                &conn,
+                false,
+                0,
+                "clicked",
+                OwnedValue::from(0_u8),
+                0,
+            )
+            .await
+            .expect_err("root menu clicked should return InvalidArgs");
+
+        assert!(matches!(err, zbus::fdo::Error::InvalidArgs(_)));
+    }
 }

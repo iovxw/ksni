@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixed
+- Return `InvalidArgs` instead of panicking when a D-Bus client sends a root menu `clicked` event (`id=0`)
+
 # 0.3.4 (2026-04-10)
 
 ## Fixed

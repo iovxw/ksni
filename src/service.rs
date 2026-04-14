@@ -568,10 +568,14 @@ fn hash_of<T: Hash>(v: T) -> u64 {
     hasher.finish()
 }
 
-#[cfg(all(test, feature = "tokio"))]
+#[cfg(all(test, any(feature = "tokio", feature = "async-io")))]
 mod tests {
     use super::Service;
     use crate::{menu::StandardItem, Tray};
+    #[cfg(feature = "async-io")]
+    use macro_rules_attribute::apply;
+    #[cfg(feature = "async-io")]
+    use smol_macros::test;
     use zbus::zvariant::OwnedValue;
 
     #[derive(Clone, Default)]
@@ -591,8 +595,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn root_menu_clicked_returns_invalid_args() {
+    #[cfg_attr(feature = "tokio", tokio::test)]
+    #[cfg_attr(feature = "async-io", apply(test!))]
+    async fn assert_root_menu_clicked_returns_invalid_args() {
         let service = Service::new(TestTray);
         let conn = zbus::Connection::session().await.unwrap();
         let mut service = service.lock().await;

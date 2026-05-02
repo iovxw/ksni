@@ -11,6 +11,9 @@
 - Correct DBusMenu `AboutToShow` and `AboutToShowGroup` argument handling
 - Correct DBusMenu status mapping for property updates
 
+## Added
+- Mocked protocol test suites for StatusNotifierWatcher, StatusNotifierItem, and DBusMenu across tokio, async-io, and blocking runtimes
+
 # 0.3.4 (2026-04-10)
 
 ## Fixed

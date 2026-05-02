@@ -617,11 +617,23 @@ mod tests {
             vec![
                 crate::menu::SubMenu {
                     label: "root-submenu".into(),
-                    submenu: vec![StandardItem {
-                        label: "nested-item".into(),
-                        ..Default::default()
-                    }
-                    .into()],
+                    submenu: vec![
+                        crate::menu::SubMenu {
+                            label: "nested-submenu".into(),
+                            submenu: vec![StandardItem {
+                                label: "deep-item".into(),
+                                ..Default::default()
+                            }
+                            .into()],
+                            ..Default::default()
+                        }
+                        .into(),
+                        StandardItem {
+                            label: "nested-item".into(),
+                            ..Default::default()
+                        }
+                        .into(),
+                    ],
                     ..Default::default()
                 }
                 .into(),
@@ -652,6 +664,32 @@ mod tests {
             .unwrap()
     }
 
+    fn find_layout_by_label(
+        layout: &crate::dbus_interface::Layout,
+        label: &str,
+    ) -> Option<crate::dbus_interface::Layout> {
+        if layout
+            .properties
+            .get("label")
+            .and_then(|value| value.clone().try_into().ok())
+            == Some(label.to_string())
+        {
+            return Some(crate::dbus_interface::Layout {
+                id: layout.id,
+                properties: layout.properties.clone(),
+                children: layout.children.clone(),
+            });
+        }
+
+        for child in layout_children(layout) {
+            if let Some(found) = find_layout_by_label(&child, label) {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
     #[test]
     fn build_layout_with_zero_recursion_keeps_children_hidden() {
         let service = Service::new(TestTray);
@@ -680,11 +718,103 @@ mod tests {
         let root_children = layout_children(&layout);
 
         assert_eq!(root_children.len(), 2);
+        assert_eq!(owned_str(&root_children[0].properties, "label"), "root-submenu");
+        assert_eq!(owned_str(&root_children[1].properties, "label"), "item");
         assert_eq!(owned_str(&root_children[0].properties, "children-display"), "submenu");
         assert!(
             root_children[0].children.is_empty(),
             "recursionDepth=1 should not include grandchildren"
         );
+    }
+
+    #[test]
+    fn build_layout_without_recursion_limit_includes_full_subtree_in_order() {
+        let service = Service::new(TestTray);
+        let service = service.blocking_lock();
+
+        let layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+        let root_children = layout_children(&layout);
+
+        assert_eq!(root_children.len(), 2);
+        assert_eq!(owned_str(&root_children[0].properties, "label"), "root-submenu");
+        assert_eq!(owned_str(&root_children[1].properties, "label"), "item");
+
+        let submenu_children = layout_children(&root_children[0]);
+        assert_eq!(submenu_children.len(), 2);
+        assert_eq!(owned_str(&submenu_children[0].properties, "label"), "nested-submenu");
+        assert_eq!(owned_str(&submenu_children[1].properties, "label"), "nested-item");
+        assert_eq!(
+            owned_str(&submenu_children[0].properties, "children-display"),
+            "submenu"
+        );
+
+        let deep_children = layout_children(&submenu_children[0]);
+        assert_eq!(deep_children.len(), 1);
+        assert_eq!(owned_str(&deep_children[0].properties, "label"), "deep-item");
+        assert!(
+            !deep_children[0].properties.contains_key("children-display"),
+            "leaf items must not expose children-display"
+        );
+    }
+
+    #[test]
+    fn build_layout_for_submenu_parent_returns_its_subtree() {
+        let service = Service::new(TestTray);
+        let service = service.blocking_lock();
+
+        let root_layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
+            .expect("root submenu should exist");
+
+        let layout = service
+            .build_layout(root_submenu.id, None, vec!["label".into(), "children-display".into()])
+            .expect("submenu layout should exist");
+        let subtree_children = layout_children(&layout);
+
+        assert_eq!(layout.id, root_submenu.id);
+        assert_eq!(owned_str(&layout.properties, "label"), "root-submenu");
+        assert_eq!(owned_str(&layout.properties, "children-display"), "submenu");
+        assert_eq!(subtree_children.len(), 2);
+        assert_eq!(owned_str(&subtree_children[0].properties, "label"), "nested-submenu");
+        assert_eq!(owned_str(&subtree_children[1].properties, "label"), "nested-item");
+    }
+
+    #[test]
+    fn build_layout_returns_none_for_unknown_parent_id() {
+        let service = Service::new(TestTray);
+        let service = service.blocking_lock();
+
+        assert!(service.build_layout(999, None, Vec::new()).is_none());
+    }
+
+    #[test]
+    fn build_layout_preserves_children_display_when_properties_are_filtered() {
+        let service = Service::new(TestTray);
+        let service = service.blocking_lock();
+
+        let layout = service
+            .build_layout(0, None, vec!["children-display".into()])
+            .expect("root layout should exist");
+        let root_children = layout_children(&layout);
+
+        assert_eq!(layout.properties.len(), 1);
+        assert_eq!(owned_str(&layout.properties, "children-display"), "submenu");
+        assert_eq!(root_children[0].properties.len(), 1);
+        assert_eq!(owned_str(&root_children[0].properties, "children-display"), "submenu");
+        assert!(root_children[1].properties.is_empty());
+
+        let submenu_children = layout_children(&root_children[0]);
+        assert_eq!(submenu_children[0].properties.len(), 1);
+        assert_eq!(
+            owned_str(&submenu_children[0].properties, "children-display"),
+            "submenu"
+        );
+        assert!(submenu_children[1].properties.is_empty());
+        assert!(layout_children(&submenu_children[0])[0].properties.is_empty());
     }
 
     #[cfg_attr(feature = "tokio", tokio::test)]

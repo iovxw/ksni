@@ -239,6 +239,29 @@ impl<T> DbusMenu<T> {
     }
 }
 
+fn flatten_layout(layout: Layout) -> Vec<(i32, HashMap<String, OwnedValue>)> {
+    let mut items = Vec::new();
+    let mut stack = vec![layout];
+
+    while let Some(layout) = stack.pop() {
+        let Layout {
+            id,
+            properties,
+            children,
+        } = layout;
+        items.push((id, properties));
+        for child in children.into_iter().rev() {
+            stack.push(
+                child.try_into().expect(
+                    "Layout should not contain anything that can not be formatted as Value",
+                ),
+            );
+        }
+    }
+
+    items
+}
+
 #[zbus::interface(name = "com.canonical.dbusmenu")]
 impl<T: Tray> DbusMenu<T> {
     // methods
@@ -268,13 +291,17 @@ impl<T: Tray> DbusMenu<T> {
         property_names: Vec<String>,
     ) -> zbus::fdo::Result<Vec<(i32, HashMap<String, OwnedValue>)>> {
         let service = self.0.lock().await; // do NOT use any self methods after this
-        let items = ids
-            .into_iter()
-            .filter_map(|id| service.get_menu_item(id, &property_names).map(|r| (id, r)))
-            .filter(|r| !r.1.is_empty())
-            .collect();
-        // TODO: return an error if items is empty
-        Ok(items)
+        if ids.is_empty() {
+            let layout = service
+                .build_layout(0, None, property_names)
+                .expect("root layout should always exist");
+            Ok(flatten_layout(layout))
+        } else {
+            Ok(ids
+                .into_iter()
+                .filter_map(|id| service.get_menu_item(id, &property_names).map(|properties| (id, properties)))
+                .collect())
+        }
     }
 
     async fn get_property(&self, id: i32, name: String) -> zbus::fdo::Result<OwnedValue> {

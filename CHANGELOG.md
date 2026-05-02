@@ -7,6 +7,7 @@
 ## Fixed (spec compliance)
 - Respect DBusMenu `recursionDepth` when building menu layouts
 - Include `children-display` for submenu items in DBusMenu properties
+- Return all items for empty DBusMenu `GetGroupProperties` calls
 
 # 0.3.4 (2026-04-10)
 

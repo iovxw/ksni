@@ -387,10 +387,17 @@ impl<T: Tray> Service<T> {
             .iter()
             .enumerate()
             .map(|(index, (item, submenu))| {
+                let mut properties = item.to_dbus_map(&property_names);
+                if !submenu.is_empty() {
+                    properties.insert(
+                        "children-display".into(),
+                        Str::from_static("submenu").into(),
+                    );
+                }
                 Some((
                     Layout {
                         id: self.index2id(index),
-                        properties: item.to_dbus_map(&property_names),
+                        properties,
                         children: Vec::with_capacity(submenu.len()),
                     },
                     0,
@@ -426,17 +433,6 @@ impl<T: Tray> Service<T> {
                 .expect("stack pointer should always point to a valid item");
             stack.pop();
             if let Some(&parent) = stack.last() {
-                if !layout.children.is_empty() {
-                    items[parent]
-                        .as_mut()
-                        .expect("parent should always point to a valid item")
-                        .0
-                        .properties
-                        .insert(
-                            "children-display".into(),
-                            Str::from_static("submenu").into(),
-                        );
-                }
                 items[parent]
                     .as_mut()
                     .expect("parent should always point to a valid item")
@@ -446,13 +442,6 @@ impl<T: Tray> Service<T> {
                         "Layout should not contain anything that can not be formatted as Value",
                     ));
             } else {
-                let mut layout = layout;
-                if !layout.children.is_empty() {
-                    layout.properties.insert(
-                        "children-display".into(),
-                        Str::from_static("submenu").into(),
-                    );
-                }
                 return Some(layout);
             }
         }
@@ -465,8 +454,22 @@ impl<T: Tray> Service<T> {
         id: i32,
         property_filter: &[String],
     ) -> Option<HashMap<String, OwnedValue>> {
-        self.id2index(id)
-            .map(|index| self.flattened_menu[index].0.to_dbus_map(property_filter))
+        self.id2index(id).map(|index| {
+            let (item, children) = &self.flattened_menu[index];
+            let mut properties = item.to_dbus_map(property_filter);
+
+            if !children.is_empty()
+                && (property_filter.is_empty()
+                    || property_filter.contains(&"children-display".to_string()))
+            {
+                properties.insert(
+                    "children-display".into(),
+                    Str::from_static("submenu").into(),
+                );
+            }
+
+            properties
+        })
     }
 
     pub async fn event(
@@ -592,6 +595,8 @@ fn hash_of<T: Hash>(v: T) -> u64 {
 
 #[cfg(all(test, any(feature = "tokio", feature = "async-io")))]
 mod tests {
+    use std::collections::HashMap;
+
     use super::Service;
     use crate::{menu::StandardItem, Tray};
     #[cfg(feature = "async-io")]
@@ -638,6 +643,15 @@ mod tests {
             .collect()
     }
 
+    fn owned_str(properties: &HashMap<String, OwnedValue>, key: &str) -> String {
+        properties
+            .get(key)
+            .unwrap_or_else(|| panic!("missing property: {key}"))
+            .clone()
+            .try_into()
+            .unwrap()
+    }
+
     #[test]
     fn build_layout_with_zero_recursion_keeps_children_hidden() {
         let service = Service::new(TestTray);
@@ -648,6 +662,7 @@ mod tests {
             .expect("root layout should exist");
 
         assert_eq!(layout.id, 0);
+        assert_eq!(owned_str(&layout.properties, "children-display"), "submenu");
         assert!(
             layout.children.is_empty(),
             "recursionDepth=0 must not include children"
@@ -665,6 +680,7 @@ mod tests {
         let root_children = layout_children(&layout);
 
         assert_eq!(root_children.len(), 2);
+        assert_eq!(owned_str(&root_children[0].properties, "children-display"), "submenu");
         assert!(
             root_children[0].children.is_empty(),
             "recursionDepth=1 should not include grandchildren"

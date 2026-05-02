@@ -14,6 +14,9 @@
 ## Added
 - Mocked protocol test suites for StatusNotifierWatcher, StatusNotifierItem, and DBusMenu across tokio, async-io, and blocking runtimes
 
+## Changed
+- Run mocked protocol tests under `cargo-nextest` with isolated D-Bus sessions in CI
+
 # 0.3.4 (2026-04-10)
 
 ## Fixed

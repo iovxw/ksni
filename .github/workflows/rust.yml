@@ -11,8 +11,10 @@ jobs:
         os: [ubuntu-latest]
         rust: [stable, nightly]
         feature-flags:
-          - '--features blocking' # tokio
-          - '--no-default-features --features async-io,blocking' # smol
+          - '' # tokio
+          - '--features blocking' # tokio + blocking
+          - '--no-default-features --features async-io' # async-io
+          - '--no-default-features --features async-io,blocking' # async-io + blocking
         include:
         # Allow failures on nightly
         - rust: nightly
@@ -21,12 +23,16 @@ jobs:
 
     steps:
     - name: Install Dependencies
-      run: sudo apt-get install libdbus-1-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libdbus-1-dev dbus-daemon
     - name: Setup Rust
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
     - uses: actions/checkout@master
+    - name: Install cargo-nextest
+      run: cargo install cargo-nextest --locked
     - name: Run Tests
-      run: cargo test --verbose ${{ matrix.feature-flags }}
+      run: cargo nextest run --verbose --no-fail-fast ${{ matrix.feature-flags }}
       continue-on-error: ${{ matrix.can-fail }}

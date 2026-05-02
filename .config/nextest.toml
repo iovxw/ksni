@@ -1,0 +1,10 @@
+nextest-version = "0.9.98"
+experimental = ["wrapper-scripts"]
+
+[scripts.wrapper.dbus-run-session]
+command = ["dbus-run-session", "--"]
+
+[[profile.default.scripts]]
+platform = { host = 'cfg(target_os = "linux")' }
+filter = 'kind(=test) and (binary(=tokio) or binary(=smol) or binary(=blocking))'
+run-wrapper = "dbus-run-session"

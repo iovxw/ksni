@@ -361,12 +361,30 @@ impl<T: Tray> DbusMenu<T> {
         }
     }
 
-    async fn about_to_show(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
+    async fn about_to_show(&self, id: i32) -> zbus::fdo::Result<bool> {
+        let service = self.0.lock().await; // do NOT use any self methods after this
+        if service.get_menu_item(id, &[]).is_none() {
+            Err(zbus::fdo::Error::InvalidArgs("id not found".into()))
+        } else {
+            Ok(false)
+        }
     }
 
-    async fn about_to_show_group(&self) -> zbus::fdo::Result<(Vec<i32>, Vec<i32>)> {
-        Ok(Default::default())
+    async fn about_to_show_group(&self, ids: Vec<i32>) -> zbus::fdo::Result<(Vec<i32>, Vec<i32>)> {
+        let service = self.0.lock().await; // do NOT use any self methods after this
+        let id_errors = ids
+            .iter()
+            .copied()
+            .filter(|&id| service.get_menu_item(id, &[]).is_none())
+            .collect::<Vec<_>>();
+
+        if !ids.is_empty() && id_errors.len() == ids.len() {
+            Err(zbus::fdo::Error::InvalidArgs(
+                "None of the id in the group can be found".into(),
+            ))
+        } else {
+            Ok((Vec::new(), id_errors))
+        }
     }
 
     // properties

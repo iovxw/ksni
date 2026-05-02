@@ -382,60 +382,82 @@ impl<T: Tray> Service<T> {
     ) -> Option<Layout> {
         let root = self.id2index(parent_id)?;
 
-        let mut items: Vec<Option<(Layout, Vec<usize>)>> = self
+        let mut items: Vec<Option<(Layout, usize, Option<usize>)>> = self
             .flattened_menu
             .iter()
             .enumerate()
             .map(|(index, (item, submenu))| {
-                (
+                Some((
                     Layout {
                         id: self.index2id(index),
                         properties: item.to_dbus_map(&property_names),
                         children: Vec::with_capacity(submenu.len()),
                     },
-                    submenu.clone(),
-                )
+                    0,
+                    recursion_depth,
+                ))
             })
-            .map(Some)
             .collect();
         let mut stack = vec![root];
 
-        // depth first
-        while let Some(current) = stack.pop() {
-            let (layout, pending_children) = &mut items[current]
-                .as_mut()
+        while let Some(&current) = stack.last() {
+            let (_, next_child, remaining_depth) = items[current]
+                .as_ref()
                 .expect("stack pointer should always point to a valid item");
-            if pending_children.is_empty() {
+            let children = &self.flattened_menu[current].1;
+
+            let should_descend = remaining_depth != &Some(0) && *next_child < children.len();
+            if should_descend {
+                let child = children[*next_child];
+                let (_, next_child, remaining_depth) = items[current]
+                    .as_mut()
+                    .expect("stack pointer should always point to a valid item");
+                *next_child += 1;
+                let next_depth = remaining_depth.map(|depth| depth.saturating_sub(1));
+                if let Some((_, _, child_depth)) = items[child].as_mut() {
+                    *child_depth = next_depth;
+                }
+                stack.push(child);
+                continue;
+            }
+
+            let (layout, _, _) = items[current]
+                .take()
+                .expect("stack pointer should always point to a valid item");
+            stack.pop();
+            if let Some(&parent) = stack.last() {
+                if !layout.children.is_empty() {
+                    items[parent]
+                        .as_mut()
+                        .expect("parent should always point to a valid item")
+                        .0
+                        .properties
+                        .insert(
+                            "children-display".into(),
+                            Str::from_static("submenu").into(),
+                        );
+                }
+                items[parent]
+                    .as_mut()
+                    .expect("parent should always point to a valid item")
+                    .0
+                    .children
+                    .push(layout.try_into().expect(
+                        "Layout should not contain anything that can not be formatted as Value",
+                    ));
+            } else {
+                let mut layout = layout;
                 if !layout.children.is_empty() {
                     layout.properties.insert(
                         "children-display".into(),
                         Str::from_static("submenu").into(),
                     );
                 }
-                // if there's a parent, move current to parent's children
-                if let Some(parent) = stack.pop() {
-                    let current = std::mem::replace(&mut items[current], None);
-                    let layout = current.expect("should have been unwrapped once already").0;
-                    stack.push(parent);
-                    items[parent]
-                        .as_mut()
-                        .unwrap()
-                        .0
-                        .children
-                        .push(layout.try_into().expect(
-                            "Layout should not contain anything that can not be formatted as Value",
-                        ));
-                }
-            } else {
-                stack.push(current);
-                let child = pending_children.remove(0);
-                if recursion_depth.map_or(true, |depth| depth + 1 >= stack.len()) {
-                    stack.push(child);
-                }
+                return Some(layout);
             }
         }
-        let root_item = items.remove(root)?;
-        Some(root_item.0)
+
+        None
     }
 
     pub fn get_menu_item(
@@ -587,12 +609,66 @@ mod tests {
         }
 
         fn menu(&self) -> Vec<crate::MenuItem<Self>> {
-            vec![StandardItem {
-                label: "item".into(),
-                ..Default::default()
-            }
-            .into()]
+            vec![
+                crate::menu::SubMenu {
+                    label: "root-submenu".into(),
+                    submenu: vec![StandardItem {
+                        label: "nested-item".into(),
+                        ..Default::default()
+                    }
+                    .into()],
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "item".into(),
+                    ..Default::default()
+                }
+                .into(),
+            ]
         }
+    }
+
+    fn layout_children(layout: &crate::dbus_interface::Layout) -> Vec<crate::dbus_interface::Layout> {
+        layout
+            .children
+            .iter()
+            .cloned()
+            .map(|value| value.try_into().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn build_layout_with_zero_recursion_keeps_children_hidden() {
+        let service = Service::new(TestTray);
+        let service = service.blocking_lock();
+
+        let layout = service
+            .build_layout(0, Some(0), Vec::new())
+            .expect("root layout should exist");
+
+        assert_eq!(layout.id, 0);
+        assert!(
+            layout.children.is_empty(),
+            "recursionDepth=0 must not include children"
+        );
+    }
+
+    #[test]
+    fn build_layout_respects_positive_recursion_depth() {
+        let service = Service::new(TestTray);
+        let service = service.blocking_lock();
+
+        let layout = service
+            .build_layout(0, Some(1), Vec::new())
+            .expect("root layout should exist");
+        let root_children = layout_children(&layout);
+
+        assert_eq!(root_children.len(), 2);
+        assert!(
+            root_children[0].children.is_empty(),
+            "recursionDepth=1 should not include grandchildren"
+        );
     }
 
     #[cfg_attr(feature = "tokio", tokio::test)]

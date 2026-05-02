@@ -3,6 +3,7 @@
 ## Fixed
 - Return `InvalidArgs` instead of panicking when a D-Bus client sends a root menu `clicked` event (`id=0`)
 - Improve async-io executor lifetime management to avoid keeping the background thread running while idle
+- Respect DBusMenu `recursionDepth` when building menu layouts
 
 # 0.3.4 (2026-04-10)
 

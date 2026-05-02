@@ -86,6 +86,15 @@ impl fmt::Display for Status {
     }
 }
 
+impl Status {
+    pub(crate) fn to_menu_status(self) -> crate::menu::Status {
+        match self {
+            Self::Active | Self::Passive => crate::menu::Status::Normal,
+            Self::NeedsAttention => crate::menu::Status::Notice,
+        }
+    }
+}
+
 /// Extra information associated to the item
 ///
 /// That can be visualized for instance by a tooltip (or by any other mean the

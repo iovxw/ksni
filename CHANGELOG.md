@@ -9,6 +9,7 @@
 - Include `children-display` for submenu items in DBusMenu properties
 - Return all items for empty DBusMenu `GetGroupProperties` calls
 - Correct DBusMenu `AboutToShow` and `AboutToShowGroup` argument handling
+- Correct DBusMenu status mapping for property updates
 
 # 0.3.4 (2026-04-10)
 

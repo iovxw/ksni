@@ -402,13 +402,7 @@ impl<T: Tray> DbusMenu<T> {
     #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<crate::menu::Status> {
         let service = self.0.lock().await; // do NOT use any self methods after this
-        let status = match service.get_status() {
-            crate::tray::Status::Active | crate::tray::Status::Passive => {
-                crate::menu::Status::Normal
-            }
-            crate::tray::Status::NeedsAttention => crate::menu::Status::Notice,
-        };
-        Ok(status)
+        Ok(service.get_status().to_menu_status())
     }
 
     #[zbus(property)]

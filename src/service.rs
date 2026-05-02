@@ -219,7 +219,7 @@ impl<T: Tray> Service<T> {
                 &self.get_status().to_string(),
             )
             .await?;
-            menu_changed.insert("Status", self.get_status().into());
+            menu_changed.insert("Status", self.get_status().to_menu_status().into());
         }
 
         if self.icon_theme_path_changed() {

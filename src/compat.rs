@@ -1,6 +1,9 @@
 #[cfg(all(not(feature = "async-io"), not(feature = "tokio")))]
 compile_error!(r#"Either "tokio" (default) or "async-io" must be enabled."#);
 
+#[cfg(all(feature = "async-io", feature = "tokio"))]
+compile_error!(r#"Features "tokio" and "async-io" cannot be enabled at the same time."#);
+
 #[cfg(feature = "tokio")]
 mod tokio {
     use std::future::Future;
@@ -43,7 +46,7 @@ mod tokio {
 #[cfg(feature = "tokio")]
 pub use tokio::*;
 
-#[cfg(feature = "async-io")]
+#[cfg(all(feature = "async-io", not(feature = "tokio")))]
 mod async_io {
     use std::future::Future;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -303,5 +306,5 @@ mod async_io {
         //    pub type Receiver<T> = impl Future<Output = Result<T, async_channel::RecvError>>;
     }
 }
-#[cfg(feature = "async-io")]
+#[cfg(all(feature = "async-io", not(feature = "tokio")))]
 pub use async_io::*;

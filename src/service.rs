@@ -595,7 +595,7 @@ fn hash_of<T: Hash>(v: T) -> u64 {
 
 #[cfg(all(test, any(feature = "tokio", feature = "async-io")))]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use super::Service;
     use crate::{menu::StandardItem, Tray};
@@ -646,6 +646,20 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "tokio")]
+    fn blocking_lock_service<'a>(
+        service: &'a Arc<crate::compat::Mutex<Service<TestTray>>>,
+    ) -> tokio::sync::MutexGuard<'a, Service<TestTray>> {
+        service.blocking_lock()
+    }
+
+    #[cfg(feature = "async-io")]
+    fn blocking_lock_service<'a>(
+        service: &'a Arc<crate::compat::Mutex<Service<TestTray>>>,
+    ) -> async_lock::MutexGuard<'a, Service<TestTray>> {
+        async_io::block_on(service.lock())
+    }
+
     fn layout_children(layout: &crate::dbus_interface::Layout) -> Vec<crate::dbus_interface::Layout> {
         layout
             .children
@@ -693,7 +707,7 @@ mod tests {
     #[test]
     fn build_layout_with_zero_recursion_keeps_children_hidden() {
         let service = Service::new(TestTray);
-        let service = service.blocking_lock();
+        let service = blocking_lock_service(&service);
 
         let layout = service
             .build_layout(0, Some(0), Vec::new())
@@ -710,7 +724,7 @@ mod tests {
     #[test]
     fn build_layout_respects_positive_recursion_depth() {
         let service = Service::new(TestTray);
-        let service = service.blocking_lock();
+        let service = blocking_lock_service(&service);
 
         let layout = service
             .build_layout(0, Some(1), Vec::new())
@@ -730,7 +744,7 @@ mod tests {
     #[test]
     fn build_layout_without_recursion_limit_includes_full_subtree_in_order() {
         let service = Service::new(TestTray);
-        let service = service.blocking_lock();
+        let service = blocking_lock_service(&service);
 
         let layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
@@ -762,7 +776,7 @@ mod tests {
     #[test]
     fn build_layout_for_submenu_parent_returns_its_subtree() {
         let service = Service::new(TestTray);
-        let service = service.blocking_lock();
+        let service = blocking_lock_service(&service);
 
         let root_layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
@@ -786,7 +800,7 @@ mod tests {
     #[test]
     fn build_layout_returns_none_for_unknown_parent_id() {
         let service = Service::new(TestTray);
-        let service = service.blocking_lock();
+        let service = blocking_lock_service(&service);
 
         assert!(service.build_layout(999, None, Vec::new()).is_none());
     }
@@ -794,7 +808,7 @@ mod tests {
     #[test]
     fn build_layout_preserves_children_display_when_properties_are_filtered() {
         let service = Service::new(TestTray);
-        let service = service.blocking_lock();
+        let service = blocking_lock_service(&service);
 
         let layout = service
             .build_layout(0, None, vec!["children-display".into()])

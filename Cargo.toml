@@ -14,7 +14,7 @@ license = "Unlicense"
 
 [features]
 default = ["tokio"]
-blocking = ["dep:once_cell"]
+blocking = []
 tokio = ["dep:tokio", "zbus/tokio"]
 async-io = [
     "dep:async-io",
@@ -22,7 +22,6 @@ async-io = [
     "dep:async-executor",
     "dep:futures-lite",
     "dep:futures-channel",
-    "dep:once_cell",
     "zbus/async-io",
 ]
 
@@ -39,7 +38,6 @@ async-lock = { version = "3", optional = true }
 async-executor = { version = "1", optional = true }
 futures-lite = { version = "2", optional = true }
 futures-channel = { version = "0.3", optional = true }
-once_cell = { version = "1", optional = true }
 
 [dev-dependencies]
 smol = "2"

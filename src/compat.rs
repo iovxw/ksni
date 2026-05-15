@@ -22,18 +22,15 @@ mod tokio {
 
     #[cfg(feature = "blocking")]
     pub fn block_on<T>(future: impl Future<Output = T>) -> T {
-        use once_cell::sync::OnceCell;
+        use std::sync::LazyLock;
         use tokio::runtime::Runtime;
-        static RUNTIME: OnceCell<Runtime> = OnceCell::new();
-
-        RUNTIME
-            .get_or_init(|| {
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap()
-            })
-            .block_on(future)
+        static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+        });
+        RUNTIME.block_on(future)
     }
 
     pub mod mpsc {
@@ -52,7 +49,7 @@ mod async_io {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use async_executor::Executor;
-    use once_cell::sync::OnceCell;
+    use std::sync::LazyLock;
 
     // Do NOT use async_lock::OnceCell instead
     // the spawn method may be called in async context
@@ -77,11 +74,11 @@ mod async_io {
 
     impl ExecutorState {
         fn get() -> &'static Self {
-            static STATE: OnceCell<ExecutorState> = OnceCell::new();
-            STATE.get_or_init(|| Self {
+            static STATE: LazyLock<ExecutorState> = LazyLock::new(|| ExecutorState {
                 executor: Executor::new(),
                 driver_running: AtomicBool::new(false),
-            })
+            });
+            &STATE
         }
 
         fn kick_driver(&'static self) {

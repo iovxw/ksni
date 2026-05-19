@@ -102,7 +102,16 @@ pub(crate) async fn run<T: Tray>(
         }
     }
 
-    if !assume_sni_available // TODO: a better check?
+    // Note: both major SNI watcher implementations hardcode IsStatusNotifierHostRegistered = true
+    // and never meaningfully call RegisterStatusNotifierHost, so WontShow cannot occur in practice.
+    // - KDE Plasma: RegisterStatusNotifierHost is a no-op, IsStatusNotifierHostRegistered always
+    //   returns true, and StatusNotifierHostRegistered is never emitted.
+    //   https://github.com/KDE/plasma-workspace/blob/6112145c/statusnotifierwatcher/statusnotifierwatcher.cpp#L92-L100
+    // - GNOME AppIndicator: RegisterStatusNotifierHost returns NOT_SUPPORTED, IsStatusNotifierHostRegistered
+    //   always returns true, and StatusNotifierHostRegistered is emitted once in the constructor.
+    //   https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/f187dba/statusNotifierWatcher.js#L65
+    //   https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/f187dba/statusNotifierWatcher.js#L278-L280
+    if !assume_sni_available
         && !snw_object
             .is_status_notifier_host_registered()
             .await
@@ -144,8 +153,8 @@ pub(crate) async fn run<T: Tray>(
                                     break;
                                 }
                             }
-                            // TODO: check is_status_notifier_host_registered?
-                            // it may not ready yet, spawn a delayed check?
+                            // No need to check is_status_notifier_host_registered here:
+                            // real watcher implementations always return true for it (see comment above).
                         }
                         None => {
                             if !service.tray.watcher_offline(OfflineReason::No) {

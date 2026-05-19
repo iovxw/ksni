@@ -77,8 +77,10 @@ impl<T: Tray> StatusNotifierItem<T> {
         if T::MENU_ON_ACTIVATE {
             // a UnknownMethod is required to make ItemIsMenu work on GNOME
             // https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L803
-            // and KDE also ignores ItemIsMenu
+            // KDE Plasma < 6.4 also relies on this behavior
             // https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L44-L57
+            // KDE Plasma >= 6.4 won't call activate if ItemIsMenu is true, so we can keep this workaround
+            // https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
             Err(zbus::fdo::Error::UnknownMethod("ItemIsMenu".into()))
         } else {
             let mut service = self.0.lock().await; // do NOT use any self methods after this

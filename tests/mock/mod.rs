@@ -977,7 +977,7 @@ fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: &Cal
     .contains("InvalidArgs"));
 }
 
-pub async fn async_registration_and_watchers() {
+pub async fn async_registration() {
     use ksni::TrayMethods as _;
 
     let watcher = start_watcher(true, None).await;
@@ -985,14 +985,17 @@ pub async fn async_registration_and_watchers() {
     let handle = tray.spawn().await.expect("tray should register with the mock watcher");
     let service_name = watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
     assert!(service_name.starts_with("org.kde.StatusNotifierItem-"));
-    let default_service_name = service_name.clone();
     with_blocking(move || {
         let connection = session_connection();
-        registration_and_watcher_assertions(&connection, &default_service_name);
+        registration_and_watcher_assertions(&connection, &service_name);
     })
     .await;
     handle.shutdown().await;
     close_watcher(watcher).await;
+}
+
+pub async fn async_registration_with_unique_name() {
+    use ksni::TrayMethods as _;
 
     let watcher = start_watcher(true, None).await;
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
@@ -1003,16 +1006,19 @@ pub async fn async_registration_and_watchers() {
         .expect("tray should register with its unique name when dbus names are disabled");
     let unique_name = watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
     assert!(unique_name.starts_with(':'));
-    let unique_name_for_owner = unique_name.clone();
     assert!(
         with_blocking(move || {
             let connection = session_connection();
-            has_owner(&connection, &unique_name_for_owner)
+            has_owner(&connection, &unique_name)
         })
         .await
     );
     handle.shutdown().await;
     close_watcher(watcher).await;
+}
+
+pub async fn async_registration_fails_without_watcher() {
+    use ksni::TrayMethods as _;
 
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
     let err = match tray.spawn().await {
@@ -1020,6 +1026,10 @@ pub async fn async_registration_and_watchers() {
         Err(err) => err,
     };
     assert!(matches!(err, ksni::Error::Watcher(zbus::fdo::Error::ServiceUnknown(_))));
+}
+
+pub async fn async_registration_assume_sni_available() {
+    use ksni::TrayMethods as _;
 
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray
@@ -1034,6 +1044,10 @@ pub async fn async_registration_and_watchers() {
     )
     .await;
     handle.shutdown().await;
+}
+
+pub async fn async_registration_wont_show() {
+    use ksni::TrayMethods as _;
 
     let watcher = start_watcher(false, None).await;
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
@@ -1043,6 +1057,10 @@ pub async fn async_registration_and_watchers() {
     };
     assert!(matches!(err, ksni::Error::WontShow));
     close_watcher(watcher).await;
+}
+
+pub async fn async_registration_fails_on_watcher_error() {
+    use ksni::TrayMethods as _;
 
     let watcher = start_watcher(
         true,
@@ -1326,8 +1344,33 @@ pub async fn async_dynamic_watcher_properties() {
 macro_rules! async_protocol_tests {
     ($test_attr:meta) => {
         #[ $test_attr ]
-        async fn protocol_registration_and_watchers() {
-            crate::mock::async_registration_and_watchers().await;
+        async fn protocol_registration() {
+            crate::mock::async_registration().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_registration_with_unique_name() {
+            crate::mock::async_registration_with_unique_name().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_registration_fails_without_watcher() {
+            crate::mock::async_registration_fails_without_watcher().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_registration_assume_sni_available() {
+            crate::mock::async_registration_assume_sni_available().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_registration_wont_show() {
+            crate::mock::async_registration_wont_show().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_registration_fails_on_watcher_error() {
+            crate::mock::async_registration_fails_on_watcher_error().await;
         }
 
         #[ $test_attr ]

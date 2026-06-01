@@ -80,11 +80,10 @@ impl WatcherHandle {
     }
 }
 
-pub fn blocking_registration_and_watchers() {
+pub fn blocking_registration() {
     use ksni::blocking::TrayMethods as _;
 
     let connection = session_connection();
-
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().expect("tray should register with the mock watcher");
@@ -93,7 +92,12 @@ pub fn blocking_registration_and_watchers() {
     registration_and_watcher_assertions(&connection, &service_name);
     handle.shutdown().wait();
     watcher.close();
+}
 
+pub fn blocking_registration_with_unique_name() {
+    use ksni::blocking::TrayMethods as _;
+
+    let connection = session_connection();
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray
@@ -105,6 +109,10 @@ pub fn blocking_registration_and_watchers() {
     assert!(has_owner(&connection, &unique_name));
     handle.shutdown().wait();
     watcher.close();
+}
+
+pub fn blocking_registration_fails_without_watcher() {
+    use ksni::blocking::TrayMethods as _;
 
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
     let err = match tray.spawn() {
@@ -112,6 +120,10 @@ pub fn blocking_registration_and_watchers() {
         Err(err) => err,
     };
     assert!(matches!(err, ksni::Error::Watcher(zbus::fdo::Error::ServiceUnknown(_))));
+}
+
+pub fn blocking_registration_assume_sni_available() {
+    use ksni::blocking::TrayMethods as _;
 
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray
@@ -124,6 +136,10 @@ pub fn blocking_registration_and_watchers() {
         "ServiceUnknown watcher_offline callback",
     );
     handle.shutdown().wait();
+}
+
+pub fn blocking_registration_wont_show() {
+    use ksni::blocking::TrayMethods as _;
 
     let watcher = WatcherHandle::start(false).unwrap();
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
@@ -133,6 +149,10 @@ pub fn blocking_registration_and_watchers() {
     };
     assert!(matches!(err, ksni::Error::WontShow));
     watcher.close();
+}
+
+pub fn blocking_registration_fails_on_watcher_error() {
+    use ksni::blocking::TrayMethods as _;
 
     let watcher = WatcherHandle::start_with_register_error(
         true,
@@ -353,8 +373,33 @@ pub fn blocking_dynamic_watcher_properties() {
 macro_rules! blocking_protocol_tests {
     () => {
         #[test]
-        fn protocol_registration_and_watchers() {
-            crate::mock::blocking::blocking_registration_and_watchers();
+        fn protocol_registration() {
+            crate::mock::blocking::blocking_registration();
+        }
+
+        #[test]
+        fn protocol_registration_with_unique_name() {
+            crate::mock::blocking::blocking_registration_with_unique_name();
+        }
+
+        #[test]
+        fn protocol_registration_fails_without_watcher() {
+            crate::mock::blocking::blocking_registration_fails_without_watcher();
+        }
+
+        #[test]
+        fn protocol_registration_assume_sni_available() {
+            crate::mock::blocking::blocking_registration_assume_sni_available();
+        }
+
+        #[test]
+        fn protocol_registration_wont_show() {
+            crate::mock::blocking::blocking_registration_wont_show();
+        }
+
+        #[test]
+        fn protocol_registration_fails_on_watcher_error() {
+            crate::mock::blocking::blocking_registration_fails_on_watcher_error();
         }
 
         #[test]

@@ -7,11 +7,11 @@ use zbus::zvariant::OwnedValue;
 use super::{
     MockWatcher, RegisterItemError, TestTray, WatcherState, DEFAULT_TIMEOUT,
     MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE, SNI_INTERFACE, SNI_PATH, WATCHER_NAME,
-    WATCHER_PATH, dbusmenu_assertions, has_owner, message_body, mutate_sni_properties,
-    property_i32, property_string, registration_and_watcher_assertions,
-    session_connection, sni_property_and_method_assertions, snapshot_events,
-    spawn_filtered_signal_waiter, spawn_signal_waiter, sni_proxy, wait_until,
-    watcher_proxy,
+    WATCHER_PATH, dbusmenu_assertions, decode_layout, find_layout_by_label, has_owner,
+    message_body, menu_proxy, mutate_sni_properties, property_i32, property_string,
+    registration_and_watcher_assertions, session_connection, sni_property_and_method_assertions,
+    snapshot_events, spawn_filtered_signal_waiter, spawn_signal_waiter, sni_proxy, wait_until,
+    watcher_proxy, LayoutTuple,
 };
 
 pub struct WatcherHandle {
@@ -257,6 +257,17 @@ pub fn blocking_status_notifier_item_protocol() {
     assert!(menu_invalidated.is_empty());
     assert_eq!(property_string(&menu_changed, "TextDirection"), "rtl");
     assert_eq!(property_string(&menu_changed, "Status"), "notice");
+    let icon_paths: Vec<String> = menu_changed
+        .get("IconThemePath")
+        .expect("IconThemePath should be present")
+        .clone()
+        .try_into()
+        .unwrap();
+    assert_eq!(icon_paths, vec!["/tmp/mock-icons-updated".to_string()]);
+
+    let proxy = sni_proxy(&connection, &service_name);
+    assert_eq!(proxy.get_property::<String>("Title").unwrap(), "Updated Mock Tray");
+    assert_eq!(proxy.get_property::<String>("Status").unwrap(), "NeedsAttention");
 
     handle.shutdown().wait();
     watcher.close();
@@ -302,6 +313,13 @@ pub fn blocking_dbusmenu_protocol() {
     let (revision, parent): (u32, i32) = message_body(layout_updated.wait(DEFAULT_TIMEOUT));
     assert_eq!(parent, 0);
     assert!(revision > 0);
+
+    let proxy = menu_proxy(&connection, &service_name);
+    let (_, layout_all): (u32, LayoutTuple) = proxy
+        .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
+        .unwrap();
+    let layout_all = decode_layout(layout_all);
+    assert!(find_layout_by_label(&layout_all, "Extra").is_some());
 
     handle.shutdown().wait();
     watcher.close();
@@ -370,6 +388,37 @@ pub fn blocking_dynamic_watcher_properties() {
     watcher.close();
 }
 
+pub fn blocking_watcher_offline_stops_tray() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (mut tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    tray.continue_on_offline = false;
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    watcher.close();
+
+    wait_until(
+        DEFAULT_TIMEOUT,
+        || handle.is_closed(),
+        "tray should stop after watcher_offline returns false",
+    );
+}
+
+pub fn blocking_update_after_shutdown_returns_none() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    handle.shutdown().wait();
+    wait_until(DEFAULT_TIMEOUT, || handle.is_closed(), "handle should be closed after shutdown");
+    let result = handle.update(|_| ());
+    assert!(result.is_none(), "update after shutdown should return None");
+    watcher.close();
+}
+
 macro_rules! blocking_protocol_tests {
     () => {
         #[test]
@@ -425,6 +474,16 @@ macro_rules! blocking_protocol_tests {
         #[test]
         fn protocol_dynamic_watcher_properties() {
             crate::mock::blocking::blocking_dynamic_watcher_properties();
+        }
+
+        #[test]
+        fn protocol_watcher_offline_stops_tray() {
+            crate::mock::blocking::blocking_watcher_offline_stops_tray();
+        }
+
+        #[test]
+        fn protocol_update_after_shutdown_returns_none() {
+            crate::mock::blocking::blocking_update_after_shutdown_returns_none();
         }
     };
 }

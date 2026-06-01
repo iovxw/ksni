@@ -126,18 +126,6 @@ impl AsyncWatcherHandle {
         self.state.lock().unwrap().register_item_error = value;
     }
 
-    pub fn wait_for_registration_count(&self, count: usize, timeout: Duration) -> Vec<String> {
-        wait_until(timeout, || self.registered_items().len() >= count, "tray registrations");
-        self.registered_items()
-    }
-
-    pub fn wait_for_item_registration(&self, timeout: Duration) -> String {
-        self.wait_for_registration_count(1, timeout)
-            .into_iter()
-            .next()
-            .expect("at least one registration should exist")
-    }
-
     pub async fn wait_for_registration_count_async(
         &self,
         count: usize,
@@ -1341,6 +1329,38 @@ pub async fn async_dynamic_watcher_properties() {
     watcher.close().await;
 }
 
+pub async fn async_watcher_offline_stops_tray() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (mut tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    tray.continue_on_offline = false;
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+    close_watcher(watcher).await;
+
+    wait_until_async(
+        DEFAULT_TIMEOUT,
+        || handle.is_closed(),
+        "tray should stop after watcher_offline returns false",
+    )
+    .await;
+}
+
+pub async fn async_update_after_shutdown_returns_none() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+    handle.shutdown().await;
+    wait_until_async(DEFAULT_TIMEOUT, || handle.is_closed(), "handle should be closed after shutdown").await;
+    let result = handle.update(|_| ()).await;
+    assert!(result.is_none(), "update after shutdown should return None");
+    close_watcher(watcher).await;
+}
+
 macro_rules! async_protocol_tests {
     ($test_attr:meta) => {
         #[ $test_attr ]
@@ -1396,6 +1416,16 @@ macro_rules! async_protocol_tests {
         #[ $test_attr ]
         async fn protocol_dynamic_watcher_properties() {
             crate::mock::async_dynamic_watcher_properties().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_watcher_offline_stops_tray() {
+            crate::mock::async_watcher_offline_stops_tray().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_update_after_shutdown_returns_none() {
+            crate::mock::async_update_after_shutdown_returns_none().await;
         }
     };
 }

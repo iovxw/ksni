@@ -35,30 +35,25 @@ impl RegisterItemError {
     }
 }
 
-#[derive(Clone)]
 struct WatcherState {
-    registered_items: Arc<Mutex<Vec<String>>>,
+    registered_items: Vec<String>,
     host_registered: bool,
     protocol_version: i32,
-    register_item_error: Arc<Mutex<Option<RegisterItemError>>>,
+    register_item_error: Option<RegisterItemError>,
 }
 
 struct MockWatcher {
-    state: WatcherState,
+    state: Arc<Mutex<WatcherState>>,
 }
 
 #[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
 impl MockWatcher {
     async fn register_status_notifier_item(&self, service: &str) -> zbus::fdo::Result<()> {
-        if let Some(error) = self.state.register_item_error.lock().unwrap().clone() {
+        let mut state = self.state.lock().unwrap();
+        if let Some(error) = state.register_item_error.clone() {
             return Err(error.into_fdo_error());
         }
-
-        self.state
-            .registered_items
-            .lock()
-            .unwrap()
-            .push(service.to_string());
+        state.registered_items.push(service.to_string());
         Ok(())
     }
 
@@ -68,28 +63,28 @@ impl MockWatcher {
 
     #[zbus(property)]
     fn registered_status_notifier_items(&self) -> zbus::fdo::Result<Vec<String>> {
-        Ok(self.state.registered_items.lock().unwrap().clone())
+        Ok(self.state.lock().unwrap().registered_items.clone())
     }
 
     #[zbus(property)]
     fn is_status_notifier_host_registered(&self) -> zbus::fdo::Result<bool> {
-        Ok(self.state.host_registered)
+        Ok(self.state.lock().unwrap().host_registered)
     }
 
     #[zbus(property)]
     fn protocol_version(&self) -> zbus::fdo::Result<i32> {
-        Ok(self.state.protocol_version)
+        Ok(self.state.lock().unwrap().protocol_version)
     }
 }
 
 pub struct WatcherHandle {
     connection: Connection,
-    state: WatcherState,
+    state: Arc<Mutex<WatcherState>>,
 }
 
 pub struct AsyncWatcherHandle {
     connection: zbus::Connection,
-    state: WatcherState,
+    state: Arc<Mutex<WatcherState>>,
 }
 
 impl WatcherHandle {
@@ -101,12 +96,12 @@ impl WatcherHandle {
         host_registered: bool,
         register_item_error: Option<RegisterItemError>,
     ) -> zbus::Result<Self> {
-        let state = WatcherState {
-            registered_items: Arc::new(Mutex::new(Vec::new())),
+        let state = Arc::new(Mutex::new(WatcherState {
+            registered_items: Vec::new(),
             host_registered,
             protocol_version: 0,
-            register_item_error: Arc::new(Mutex::new(register_item_error)),
-        };
+            register_item_error,
+        }));
         let connection = connection::Builder::session()?
             .method_timeout(DEFAULT_TIMEOUT)
             .serve_at(
@@ -121,7 +116,19 @@ impl WatcherHandle {
     }
 
     pub fn registered_items(&self) -> Vec<String> {
-        self.state.registered_items.lock().unwrap().clone()
+        self.state.lock().unwrap().registered_items.clone()
+    }
+
+    pub fn set_host_registered(&self, value: bool) {
+        self.state.lock().unwrap().host_registered = value;
+    }
+
+    pub fn set_protocol_version(&self, value: i32) {
+        self.state.lock().unwrap().protocol_version = value;
+    }
+
+    pub fn set_register_item_error(&self, value: Option<RegisterItemError>) {
+        self.state.lock().unwrap().register_item_error = value;
     }
 
     pub fn wait_for_registration_count(&self, count: usize, timeout: Duration) -> Vec<String> {
@@ -146,12 +153,12 @@ impl AsyncWatcherHandle {
         host_registered: bool,
         register_item_error: Option<RegisterItemError>,
     ) -> zbus::Result<Self> {
-        let state = WatcherState {
-            registered_items: Arc::new(Mutex::new(Vec::new())),
+        let state = Arc::new(Mutex::new(WatcherState {
+            registered_items: Vec::new(),
             host_registered,
             protocol_version: 0,
-            register_item_error: Arc::new(Mutex::new(register_item_error)),
-        };
+            register_item_error,
+        }));
         let connection = async_connection::Builder::session()?
             .method_timeout(DEFAULT_TIMEOUT)
             .serve_at(
@@ -167,7 +174,19 @@ impl AsyncWatcherHandle {
     }
 
     pub fn registered_items(&self) -> Vec<String> {
-        self.state.registered_items.lock().unwrap().clone()
+        self.state.lock().unwrap().registered_items.clone()
+    }
+
+    pub fn set_host_registered(&self, value: bool) {
+        self.state.lock().unwrap().host_registered = value;
+    }
+
+    pub fn set_protocol_version(&self, value: i32) {
+        self.state.lock().unwrap().protocol_version = value;
+    }
+
+    pub fn set_register_item_error(&self, value: Option<RegisterItemError>) {
+        self.state.lock().unwrap().register_item_error = value;
     }
 
     pub fn wait_for_registration_count(&self, count: usize, timeout: Duration) -> Vec<String> {
@@ -1618,6 +1637,73 @@ pub fn blocking_non_standard_compatibility() {
     watcher.close();
 }
 
+pub async fn async_dynamic_watcher_properties() {
+    use ksni::TrayMethods as _;
+
+    let _guard = async_test_lock().lock().await;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+
+    // Mutate watcher state while the tray is running; changes must be
+    // immediately visible via D-Bus since the handle shares the same
+    // Arc<Mutex<WatcherState>> as the MockWatcher interface.
+    watcher.set_protocol_version(42);
+    watcher.set_host_registered(false);
+
+    let (protocol_version, host_registered) = with_blocking(|| {
+        let connection = session_connection();
+        let proxy = watcher_proxy(&connection);
+        let version: i32 = proxy
+            .get_property("ProtocolVersion")
+            .expect("watcher should expose protocol version");
+        let host: bool = proxy
+            .get_property("IsStatusNotifierHostRegistered")
+            .expect("watcher should expose host registration state");
+        (version, host)
+    })
+    .await;
+    assert_eq!(protocol_version, 42);
+    assert!(!host_registered);
+
+    handle.shutdown().await;
+    watcher.close().await;
+}
+
+#[cfg(feature = "blocking")]
+pub fn blocking_dynamic_watcher_properties() {
+    use ksni::blocking::TrayMethods as _;
+
+    let _guard = blocking_test_lock().lock().unwrap();
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+
+    // Mutate watcher state while the tray is running; changes must be
+    // immediately visible via D-Bus since the handle shares the same
+    // Arc<Mutex<WatcherState>> as the MockWatcher interface.
+    watcher.set_protocol_version(42);
+    watcher.set_host_registered(false);
+
+    let connection = session_connection();
+    let proxy = watcher_proxy(&connection);
+    let version: i32 = proxy
+        .get_property("ProtocolVersion")
+        .expect("watcher should expose protocol version");
+    let host: bool = proxy
+        .get_property("IsStatusNotifierHostRegistered")
+        .expect("watcher should expose host registration state");
+    assert_eq!(version, 42);
+    assert!(!host);
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
 macro_rules! async_protocol_tests {
     ($test_attr:meta) => {
         #[ $test_attr ]
@@ -1643,6 +1729,11 @@ macro_rules! async_protocol_tests {
         #[ $test_attr ]
         async fn protocol_non_standard_compatibility() {
             crate::mock::async_non_standard_compatibility().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_dynamic_watcher_properties() {
+            crate::mock::async_dynamic_watcher_properties().await;
         }
     };
 }
@@ -1675,6 +1766,11 @@ macro_rules! blocking_protocol_tests {
         #[test]
         fn protocol_non_standard_compatibility() {
             crate::mock::blocking_non_standard_compatibility();
+        }
+
+        #[test]
+        fn protocol_dynamic_watcher_properties() {
+            crate::mock::blocking_dynamic_watcher_properties();
         }
     };
 }

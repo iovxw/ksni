@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use ksni::menu::{CheckmarkItem, Disposition, RadioGroup, RadioItem, StandardItem, SubMenu, TextDirection};
@@ -752,24 +752,6 @@ async fn close_watcher(watcher: AsyncWatcherHandle) {
     watcher.close().await;
 }
 
-#[cfg(feature = "tokio")]
-fn async_test_lock() -> &'static tokio::sync::Mutex<()> {
-    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-}
-
-#[cfg(all(feature = "async-io", not(feature = "tokio")))]
-fn async_test_lock() -> &'static async_lock::Mutex<()> {
-    static LOCK: OnceLock<async_lock::Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| async_lock::Mutex::new(()))
-}
-
-#[cfg(feature = "blocking")]
-fn blocking_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
 fn mutate_sni_properties(tray: &mut TestTray<false>) {
     tray.category = Category::Communications;
     tray.title = "Updated Mock Tray".into();
@@ -1061,8 +1043,6 @@ fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: &Cal
 pub async fn async_registration_and_watchers() {
     use ksni::TrayMethods as _;
 
-    let _guard = async_test_lock().lock().await;
-
     let watcher = start_watcher(true, None).await;
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().await.expect("tray should register with the mock watcher");
@@ -1144,8 +1124,6 @@ pub async fn async_registration_and_watchers() {
 pub async fn async_watcher_lifecycle() {
     use ksni::TrayMethods as _;
 
-    let _guard = async_test_lock().lock().await;
-
     let watcher = start_watcher(true, None).await;
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().await.expect("tray should start");
@@ -1175,8 +1153,6 @@ pub async fn async_watcher_lifecycle() {
 
 pub async fn async_status_notifier_item_protocol() {
     use ksni::TrayMethods as _;
-
-    let _guard = async_test_lock().lock().await;
 
     let watcher = start_watcher(true, None).await;
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
@@ -1269,8 +1245,6 @@ pub async fn async_status_notifier_item_protocol() {
 pub async fn async_dbusmenu_protocol() {
     use ksni::TrayMethods as _;
 
-    let _guard = async_test_lock().lock().await;
-
     let watcher = start_watcher(true, None).await;
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().await.expect("tray should start");
@@ -1344,8 +1318,6 @@ pub async fn async_dbusmenu_protocol() {
 pub async fn async_non_standard_compatibility() {
     use ksni::TrayMethods as _;
 
-    let _guard = async_test_lock().lock().await;
-
     let watcher = start_watcher(true, None).await;
     let (tray, _) = TestTray::<true>::new("runtime-protocol-tray");
     let handle = tray.spawn().await.expect("tray should start");
@@ -1384,8 +1356,6 @@ pub async fn async_non_standard_compatibility() {
 #[cfg(feature = "blocking")]
 pub fn blocking_registration_and_watchers() {
     use ksni::blocking::TrayMethods as _;
-
-    let _guard = blocking_test_lock().lock().unwrap();
 
     let connection = session_connection();
 
@@ -1456,8 +1426,6 @@ pub fn blocking_registration_and_watchers() {
 pub fn blocking_watcher_lifecycle() {
     use ksni::blocking::TrayMethods as _;
 
-    let _guard = blocking_test_lock().lock().unwrap();
-
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().expect("tray should start");
@@ -1486,8 +1454,6 @@ pub fn blocking_watcher_lifecycle() {
 #[cfg(feature = "blocking")]
 pub fn blocking_status_notifier_item_protocol() {
     use ksni::blocking::TrayMethods as _;
-
-    let _guard = blocking_test_lock().lock().unwrap();
 
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
@@ -1556,8 +1522,6 @@ pub fn blocking_status_notifier_item_protocol() {
 pub fn blocking_dbusmenu_protocol() {
     use ksni::blocking::TrayMethods as _;
 
-    let _guard = blocking_test_lock().lock().unwrap();
-
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().expect("tray should start");
@@ -1604,8 +1568,6 @@ pub fn blocking_dbusmenu_protocol() {
 pub fn blocking_non_standard_compatibility() {
     use ksni::blocking::TrayMethods as _;
 
-    let _guard = blocking_test_lock().lock().unwrap();
-
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, _) = TestTray::<true>::new("runtime-protocol-tray");
     let handle = tray.spawn().expect("tray should start");
@@ -1640,8 +1602,6 @@ pub fn blocking_non_standard_compatibility() {
 pub async fn async_dynamic_watcher_properties() {
     use ksni::TrayMethods as _;
 
-    let _guard = async_test_lock().lock().await;
-
     let watcher = start_watcher(true, None).await;
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
     let handle = tray.spawn().await.expect("tray should start");
@@ -1675,8 +1635,6 @@ pub async fn async_dynamic_watcher_properties() {
 #[cfg(feature = "blocking")]
 pub fn blocking_dynamic_watcher_properties() {
     use ksni::blocking::TrayMethods as _;
-
-    let _guard = blocking_test_lock().lock().unwrap();
 
     let watcher = WatcherHandle::start(true).unwrap();
     let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");

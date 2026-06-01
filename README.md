@@ -144,6 +144,18 @@ ksni = { version = "0.3", features = ["blocking"] }
 
 [Tokio]: https://tokio.rs
 
+## Testing
+
+Protocol tests require [`cargo-nextest`] and `dbus-run-session` (provided by the
+`dbus` package on most distributions). The nextest configuration in
+`.config/nextest.toml` automatically wraps each test in an isolated D-Bus session.
+
+```sh
+cargo nextest run
+```
+
+[`cargo-nextest`]: https://nexte.st
+
 ## Todo
  - [X] org.kde.StatusNotifierItem
  - [X] com.canonical.dbusmenu

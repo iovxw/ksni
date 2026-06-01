@@ -196,6 +196,7 @@ pub struct TestTray<const MENU_ON_ACTIVATE: bool> {
     pub submenu_child_label: String,
     pub radio_selected: usize,
     pub include_extra_item: bool,
+    pub include_separator: bool,
     pub continue_on_offline: bool,
     pub events: CallbackProbe,
 }
@@ -238,6 +239,7 @@ impl<const MENU_ON_ACTIVATE: bool> TestTray<MENU_ON_ACTIVATE> {
                 submenu_child_label: "Nested".into(),
                 radio_selected: 1,
                 include_extra_item: false,
+                include_separator: false,
                 continue_on_offline: true,
                 events: events.clone(),
             },
@@ -407,6 +409,10 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
             );
         }
 
+        if self.include_separator {
+            items.push(MenuItem::Separator);
+        }
+
         items
     }
 
@@ -435,10 +441,10 @@ fn icon(seed: u8) -> Icon {
 type LayoutTuple = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
 
 #[derive(Clone, Debug)]
-struct LayoutNode {
-    id: i32,
-    properties: HashMap<String, OwnedValue>,
-    children: Vec<LayoutNode>,
+pub struct LayoutNode {
+    pub id: i32,
+    pub properties: HashMap<String, OwnedValue>,
+    pub children: Vec<LayoutNode>,
 }
 
 fn decode_layout(layout: LayoutTuple) -> LayoutNode {
@@ -761,16 +767,19 @@ fn sni_property_and_method_assertions(connection: &Connection, service_name: &st
     proxy
         .call::<_, _, ()>("Scroll", &(7_i32, "horizontal"))
         .unwrap();
+    proxy
+        .call::<_, _, ()>("Scroll", &(3_i32, "vertical"))
+        .unwrap();
 
     wait_until(
         DEFAULT_TIMEOUT,
-        || snapshot_events(events).scrolls.len() == 1,
+        || snapshot_events(events).scrolls.len() == 2,
         "tray method callbacks",
     );
     let snapshot = snapshot_events(events);
     assert_eq!(snapshot.activations, vec![(10, 20)]);
     assert_eq!(snapshot.secondary_activations, vec![(30, 40)]);
-    assert_eq!(snapshot.scrolls, vec![(7, "Horizontal".into())]);
+    assert_eq!(snapshot.scrolls, vec![(7, "Horizontal".into()), (3, "Vertical".into())]);
 }
 
 fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: &CallbackProbe) {
@@ -1347,6 +1356,169 @@ pub async fn async_watcher_offline_stops_tray() {
     .await;
 }
 
+pub async fn async_handle_is_closed() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+    assert!(!handle.is_closed(), "is_closed should be false while the tray is running");
+    handle.shutdown().await;
+    wait_until_async(DEFAULT_TIMEOUT, || handle.is_closed(), "is_closed should become true after shutdown").await;
+    close_watcher(watcher).await;
+}
+
+pub async fn async_handle_clone() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+    let handle2 = handle.clone();
+
+    handle.update(|t| { t.title = "from-original".into(); }).await.expect("update from original should work");
+    handle2.update(|t| { t.title = "from-clone".into(); }).await.expect("update from clone should work");
+    assert!(!handle2.is_closed(), "cloned handle should not be closed while tray is running");
+
+    handle.shutdown().await;
+    wait_until_async(DEFAULT_TIMEOUT, || handle2.is_closed(), "cloned handle should also see shutdown").await;
+    assert!(handle.is_closed(), "original handle should also be closed after shutdown");
+    close_watcher(watcher).await;
+}
+
+pub async fn async_menu_item_optional_properties() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (mut tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    tray.standard_enabled = false;
+    tray.standard_visible = false;
+    tray.include_separator = true;
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+    let service_name_clone = service_name.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        let proxy = menu_proxy(&connection, &service_name_clone);
+        let (_, layout): (u32, LayoutTuple) = proxy
+            .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
+            .unwrap();
+        let layout = decode_layout(layout);
+
+        let standard = find_layout_by_label(&layout, "Open").expect("standard item should exist");
+        let enabled: bool = standard
+            .properties
+            .get("enabled")
+            .expect("enabled=false item must have the enabled property")
+            .clone()
+            .try_into()
+            .unwrap();
+        assert!(!enabled, "enabled property should be false");
+        let visible: bool = standard
+            .properties
+            .get("visible")
+            .expect("visible=false item must have the visible property")
+            .clone()
+            .try_into()
+            .unwrap();
+        assert!(!visible, "visible property should be false");
+
+        let separator = layout
+            .children
+            .iter()
+            .find(|node| {
+                node.properties
+                    .get("type")
+                    .and_then(|v| v.clone().try_into().ok())
+                    == Some("separator".to_string())
+            })
+            .expect("separator item should exist in the menu");
+        assert!(!separator.properties.contains_key("label"), "separators must not have a label");
+    })
+    .await;
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
+pub async fn async_watcher_multiple_offline_online_cycles() {
+    use ksni::TrayMethods as _;
+
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let mut watcher = start_watcher(true, None).await;
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+
+    for cycle in 1..=3_usize {
+        close_watcher(watcher).await;
+        wait_until_async(
+            DEFAULT_TIMEOUT,
+            || snapshot_events(&events).offline.len() >= cycle,
+            "watcher offline callback",
+        )
+        .await;
+
+        watcher = start_watcher(true, None).await;
+        watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+        wait_until_async(
+            DEFAULT_TIMEOUT,
+            || snapshot_events(&events).online_count >= cycle,
+            "watcher online callback",
+        )
+        .await;
+    }
+
+    let snapshot = snapshot_events(&events);
+    assert_eq!(snapshot.offline.len(), 3);
+    assert_eq!(snapshot.online_count, 3);
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
+pub async fn async_watcher_reregistration_failure() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    watcher.wait_for_item_registration_async(DEFAULT_TIMEOUT).await;
+
+    close_watcher(watcher).await;
+    wait_until_async(
+        DEFAULT_TIMEOUT,
+        || snapshot_events(&events).offline.iter().any(|e| e.contains("No")),
+        "watcher offline after close",
+    )
+    .await;
+
+    let watcher = start_watcher(
+        true,
+        Some(RegisterItemError::Failed("registration rejected".into())),
+    )
+    .await;
+    wait_until_async(
+        DEFAULT_TIMEOUT,
+        || snapshot_events(&events).online_count >= 1,
+        "watcher_online should be called when new watcher appears",
+    )
+    .await;
+    wait_until_async(
+        DEFAULT_TIMEOUT,
+        || {
+            let snap = snapshot_events(&events);
+            snap.offline.len() >= 2 && snap.offline[1].contains("Error")
+        },
+        "watcher_offline with Error reason should be called when re-registration fails",
+    )
+    .await;
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
 pub async fn async_update_after_shutdown_returns_none() {
     use ksni::TrayMethods as _;
 
@@ -1426,6 +1598,31 @@ macro_rules! async_protocol_tests {
         #[ $test_attr ]
         async fn protocol_update_after_shutdown_returns_none() {
             crate::mock::async_update_after_shutdown_returns_none().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_handle_is_closed() {
+            crate::mock::async_handle_is_closed().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_handle_clone() {
+            crate::mock::async_handle_clone().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_menu_item_optional_properties() {
+            crate::mock::async_menu_item_optional_properties().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_watcher_multiple_offline_online_cycles() {
+            crate::mock::async_watcher_multiple_offline_online_cycles().await;
+        }
+
+        #[ $test_attr ]
+        async fn protocol_watcher_reregistration_failure() {
+            crate::mock::async_watcher_reregistration_failure().await;
         }
     };
 }

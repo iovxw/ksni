@@ -11,7 +11,7 @@ use super::{
     message_body, menu_proxy, mutate_sni_properties, property_i32, property_string,
     registration_and_watcher_assertions, session_connection, sni_property_and_method_assertions,
     snapshot_events, spawn_filtered_signal_waiter, spawn_signal_waiter, sni_proxy, wait_until,
-    watcher_proxy, LayoutTuple,
+    watcher_proxy, LayoutNode, LayoutTuple,
 };
 
 pub struct WatcherHandle {
@@ -419,6 +419,160 @@ pub fn blocking_update_after_shutdown_returns_none() {
     watcher.close();
 }
 
+pub fn blocking_handle_is_closed() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    assert!(!handle.is_closed(), "is_closed should be false while the tray is running");
+    handle.shutdown().wait();
+    wait_until(DEFAULT_TIMEOUT, || handle.is_closed(), "is_closed should become true after shutdown");
+    watcher.close();
+}
+
+pub fn blocking_handle_clone() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    let handle2 = handle.clone();
+
+    handle.update(|t| { t.title = "from-original".into(); }).expect("update from original should work");
+    handle2.update(|t| { t.title = "from-clone".into(); }).expect("update from clone should work");
+    assert!(!handle2.is_closed(), "cloned handle should not be closed while tray is running");
+
+    handle.shutdown().wait();
+    wait_until(DEFAULT_TIMEOUT, || handle2.is_closed(), "cloned handle should also see shutdown");
+    assert!(handle.is_closed(), "original handle should also be closed after shutdown");
+    watcher.close();
+}
+
+pub fn blocking_menu_item_optional_properties() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (mut tray, _) = TestTray::<false>::new("runtime-protocol-tray");
+    tray.standard_enabled = false;
+    tray.standard_visible = false;
+    tray.include_separator = true;
+    let handle = tray.spawn().expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    let connection = session_connection();
+    let proxy = menu_proxy(&connection, &service_name);
+    let (_, layout): (u32, LayoutTuple) = proxy
+        .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
+        .unwrap();
+    let layout = decode_layout(layout);
+
+    let standard = find_layout_by_label(&layout, "Open").expect("standard item should exist");
+    let enabled: bool = standard
+        .properties
+        .get("enabled")
+        .expect("enabled=false item must have the enabled property")
+        .clone()
+        .try_into()
+        .unwrap();
+    assert!(!enabled, "enabled property should be false");
+    let visible: bool = standard
+        .properties
+        .get("visible")
+        .expect("visible=false item must have the visible property")
+        .clone()
+        .try_into()
+        .unwrap();
+    assert!(!visible, "visible property should be false");
+
+    let separator: &LayoutNode = layout
+        .children
+        .iter()
+        .find(|node| {
+            node.properties
+                .get("type")
+                .and_then(|v| v.clone().try_into().ok())
+                == Some("separator".to_string())
+        })
+        .expect("separator item should exist in the menu");
+    assert!(!separator.properties.contains_key("label"), "separators must not have a label");
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
+pub fn blocking_watcher_multiple_offline_online_cycles() {
+    use ksni::blocking::TrayMethods as _;
+
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let mut watcher = WatcherHandle::start(true).unwrap();
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+
+    for cycle in 1..=3_usize {
+        watcher.close();
+        wait_until(
+            DEFAULT_TIMEOUT,
+            || snapshot_events(&events).offline.len() >= cycle,
+            "watcher offline callback",
+        );
+
+        watcher = WatcherHandle::start(true).unwrap();
+        watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+        wait_until(
+            DEFAULT_TIMEOUT,
+            || snapshot_events(&events).online_count >= cycle,
+            "watcher online callback",
+        );
+    }
+
+    let snapshot = snapshot_events(&events);
+    assert_eq!(snapshot.offline.len(), 3);
+    assert_eq!(snapshot.online_count, 3);
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
+pub fn blocking_watcher_reregistration_failure() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+
+    watcher.close();
+    wait_until(
+        DEFAULT_TIMEOUT,
+        || snapshot_events(&events).offline.iter().any(|e| e.contains("No")),
+        "watcher offline after close",
+    );
+
+    let watcher = WatcherHandle::start_with_register_error(
+        true,
+        Some(RegisterItemError::Failed("registration rejected".into())),
+    )
+    .unwrap();
+    wait_until(
+        DEFAULT_TIMEOUT,
+        || snapshot_events(&events).online_count >= 1,
+        "watcher_online should be called when new watcher appears",
+    );
+    wait_until(
+        DEFAULT_TIMEOUT,
+        || {
+            let snap = snapshot_events(&events);
+            snap.offline.len() >= 2 && snap.offline[1].contains("Error")
+        },
+        "watcher_offline with Error reason should be called when re-registration fails",
+    );
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
 macro_rules! blocking_protocol_tests {
     () => {
         #[test]
@@ -484,6 +638,31 @@ macro_rules! blocking_protocol_tests {
         #[test]
         fn protocol_update_after_shutdown_returns_none() {
             crate::mock::blocking::blocking_update_after_shutdown_returns_none();
+        }
+
+        #[test]
+        fn protocol_handle_is_closed() {
+            crate::mock::blocking::blocking_handle_is_closed();
+        }
+
+        #[test]
+        fn protocol_handle_clone() {
+            crate::mock::blocking::blocking_handle_clone();
+        }
+
+        #[test]
+        fn protocol_menu_item_optional_properties() {
+            crate::mock::blocking::blocking_menu_item_optional_properties();
+        }
+
+        #[test]
+        fn protocol_watcher_multiple_offline_online_cycles() {
+            crate::mock::blocking::blocking_watcher_multiple_offline_online_cycles();
+        }
+
+        #[test]
+        fn protocol_watcher_reregistration_failure() {
+            crate::mock::blocking::blocking_watcher_reregistration_failure();
         }
     };
 }

@@ -387,7 +387,7 @@ impl<T: Tray> Service<T> {
         &self,
         parent_id: i32,
         recursion_depth: Option<usize>,
-        property_names: Vec<String>,
+        property_filter: Vec<String>,
     ) -> Option<Layout> {
         let root = self.id2index(parent_id)?;
 
@@ -396,8 +396,11 @@ impl<T: Tray> Service<T> {
             .iter()
             .enumerate()
             .map(|(index, (item, submenu))| {
-                let mut properties = item.to_dbus_map(&property_names);
-                if !submenu.is_empty() {
+                let mut properties = item.to_dbus_map(&property_filter);
+                if !submenu.is_empty()
+                    && (property_filter.is_empty()
+                        || property_filter.contains(&"children-display".to_string()))
+                {
                     properties.insert(
                         "children-display".into(),
                         Str::from_static("submenu").into(),
@@ -838,6 +841,118 @@ mod tests {
         );
         assert!(submenu_children[1].properties.is_empty());
         assert!(layout_children(&submenu_children[0])[0].properties.is_empty());
+    }
+
+    #[test]
+    fn build_layout_excludes_children_display_when_not_in_filter() {
+        let service = Service::new(TestTray);
+        let service = blocking_lock_service(&service);
+
+        let layout = service
+            .build_layout(0, None, vec!["label".into()])
+            .expect("root layout should exist");
+        let root_children = layout_children(&layout);
+
+        assert!(
+            !layout.properties.contains_key("children-display"),
+            "root must not have children-display when not in filter"
+        );
+        assert!(
+            !root_children[0].properties.contains_key("children-display"),
+            "submenu must not have children-display when not in filter"
+        );
+        assert_eq!(owned_str(&root_children[0].properties, "label"), "root-submenu");
+        assert_eq!(root_children[0].properties.len(), 1);
+    }
+
+    #[test]
+    fn get_menu_item_returns_none_for_unknown_id() {
+        let service = Service::new(TestTray);
+        let service = blocking_lock_service(&service);
+
+        assert!(service.get_menu_item(999, &[]).is_none());
+    }
+
+    #[test]
+    fn get_menu_item_with_empty_filter_returns_all_properties() {
+        let service = Service::new(TestTray);
+        let service = blocking_lock_service(&service);
+
+        let root_layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
+            .expect("root-submenu should exist");
+
+        let properties = service
+            .get_menu_item(root_submenu.id, &[])
+            .expect("root-submenu should exist");
+
+        assert_eq!(owned_str(&properties, "label"), "root-submenu");
+        assert_eq!(owned_str(&properties, "children-display"), "submenu");
+    }
+
+    #[test]
+    fn get_menu_item_filter_excludes_unspecified_properties() {
+        let service = Service::new(TestTray);
+        let service = blocking_lock_service(&service);
+
+        let root_layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
+            .expect("root-submenu should exist");
+
+        let properties = service
+            .get_menu_item(root_submenu.id, &["label".to_string()])
+            .expect("root-submenu should exist");
+
+        assert_eq!(properties.len(), 1);
+        assert_eq!(owned_str(&properties, "label"), "root-submenu");
+        assert!(
+            !properties.contains_key("children-display"),
+            "children-display must not appear when not in filter"
+        );
+    }
+
+    #[test]
+    fn get_menu_item_includes_children_display_when_in_filter() {
+        let service = Service::new(TestTray);
+        let service = blocking_lock_service(&service);
+
+        let root_layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
+            .expect("root-submenu should exist");
+
+        let properties = service
+            .get_menu_item(root_submenu.id, &["children-display".to_string()])
+            .expect("root-submenu should exist");
+
+        assert_eq!(properties.len(), 1);
+        assert_eq!(owned_str(&properties, "children-display"), "submenu");
+    }
+
+    #[test]
+    fn get_menu_item_leaf_item_never_has_children_display() {
+        let service = Service::new(TestTray);
+        let service = blocking_lock_service(&service);
+
+        let root_layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+        let item = find_layout_by_label(&root_layout, "item")
+            .expect("item should exist");
+
+        let properties = service
+            .get_menu_item(item.id, &[])
+            .expect("item should exist");
+
+        assert!(
+            !properties.contains_key("children-display"),
+            "leaf items must never have children-display"
+        );
     }
 
     #[cfg_attr(feature = "tokio", tokio::test)]

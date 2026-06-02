@@ -1,3 +1,4 @@
-mod mock;
+mod async_tests;
+mod common;
 
-mock::async_protocol_tests!(tokio::test);
+async_tests::async_protocol_tests!(tokio::test);

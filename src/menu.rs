@@ -1,6 +1,6 @@
 //! Types used to construct a menu
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -850,47 +850,48 @@ impl From<Disposition> for OwnedValue {
 pub(crate) fn menu_flatten<T: 'static>(
     items: Vec<MenuItem<T>>,
 ) -> Vec<(RawMenuItem<T>, Vec<usize>)> {
-    let mut list: Vec<(RawMenuItem<T>, Vec<usize>)> =
+    let mut result: Vec<(RawMenuItem<T>, Vec<usize>)> =
         vec![(RawMenuItem::default(), Vec::with_capacity(items.len()))];
 
-    let mut stack = vec![(items, 0)]; // (menu, menu's parent)
+    // Vec to VecDeque guaranteed O(1) and no alloc
+    let mut stack = vec![(VecDeque::from(items), 0)]; // (menu, menu's parent index in result)
 
-    while let Some((mut current_menu, parent_index)) = stack.pop() {
-        while !current_menu.is_empty() {
-            match current_menu.remove(0) {
+    while let Some((mut current_submenu, parent_index)) = stack.pop() {
+        while let Some(menu_item) = current_submenu.pop_front() {
+            match menu_item {
                 MenuItem::Standard(item) => {
-                    let index = list.len();
-                    list.push((item.into(), Vec::new()));
+                    let index = result.len();
+                    result.push((item.into(), Vec::new()));
                     // Add self to parent's submenu
-                    list[parent_index].1.push(index);
+                    result[parent_index].1.push(index);
                 }
                 MenuItem::Separator => {
                     let item = RawMenuItem {
                         r#type: ItemType::Separator,
                         ..Default::default()
                     };
-                    let index = list.len();
-                    list.push((item, Vec::new()));
-                    list[parent_index].1.push(index);
+                    let index = result.len();
+                    result.push((item, Vec::new()));
+                    result[parent_index].1.push(index);
                 }
                 MenuItem::Checkmark(item) => {
-                    let index = list.len();
-                    list.push((item.into(), Vec::new()));
-                    list[parent_index].1.push(index);
+                    let index = result.len();
+                    result.push((item.into(), Vec::new()));
+                    result[parent_index].1.push(index);
                 }
                 MenuItem::SubMenu(mut item) => {
                     let submenu = std::mem::replace(&mut item.submenu, Default::default());
-                    let index = list.len();
-                    list.push((item.into(), Vec::with_capacity(submenu.len())));
-                    list[parent_index].1.push(index);
+                    let index = result.len();
+                    result.push((item.into(), Vec::with_capacity(submenu.len())));
+                    result[parent_index].1.push(index);
                     if !submenu.is_empty() {
-                        stack.push((current_menu, parent_index));
-                        stack.push((submenu, index));
+                        stack.push((current_submenu, parent_index));
+                        stack.push((VecDeque::from(submenu), index));
                         break;
                     }
                 }
                 MenuItem::RadioGroup(group) => {
-                    let offset = list.len();
+                    let offset = result.len();
                     let on_selected = Arc::new(Mutex::new(group.select));
                     for (idx, option) in group.options.into_iter().enumerate() {
                         let on_selected = on_selected.clone();
@@ -914,16 +915,16 @@ pub(crate) fn menu_flatten<T: 'static>(
                             }),
                             ..Default::default()
                         };
-                        let index = list.len();
-                        list.push((item, Vec::new()));
-                        list[parent_index].1.push(index);
+                        let index = result.len();
+                        result.push((item, Vec::new()));
+                        result[parent_index].1.push(index);
                     }
                 }
             }
         }
     }
 
-    list
+    result
 }
 
 #[cfg(test)]

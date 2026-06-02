@@ -8,7 +8,7 @@ use std::sync::Arc;
 use futures_util::{StreamExt, future::Either};
 use pastey::paste;
 use zbus::fdo::DBusProxy;
-use zbus::zvariant::{OwnedValue, Str, Value};
+use zbus::zvariant::{OwnedValue, Value};
 use zbus::Connection;
 
 use crate::compat::{self, mpsc, select, Mutex};
@@ -396,20 +396,10 @@ impl<T: Tray> Service<T> {
             .iter()
             .enumerate()
             .map(|(index, (item, submenu))| {
-                let mut properties = item.to_dbus_map(&property_filter);
-                if !submenu.is_empty()
-                    && (property_filter.is_empty()
-                        || property_filter.contains(&"children-display".to_string()))
-                {
-                    properties.insert(
-                        "children-display".into(),
-                        Str::from_static("submenu").into(),
-                    );
-                }
                 Some((
                     Layout {
                         id: self.index2id(index),
-                        properties,
+                        properties: item.to_dbus_map(&property_filter, !submenu.is_empty()),
                         children: Vec::with_capacity(submenu.len()),
                     },
                     0,
@@ -468,19 +458,7 @@ impl<T: Tray> Service<T> {
     ) -> Option<HashMap<String, OwnedValue>> {
         self.id2index(id).map(|index| {
             let (item, children) = &self.flattened_menu[index];
-            let mut properties = item.to_dbus_map(property_filter);
-
-            if !children.is_empty()
-                && (property_filter.is_empty()
-                    || property_filter.contains(&"children-display".to_string()))
-            {
-                properties.insert(
-                    "children-display".into(),
-                    Str::from_static("submenu").into(),
-                );
-            }
-
-            properties
+            item.to_dbus_map(property_filter, !children.is_empty())
         })
     }
 

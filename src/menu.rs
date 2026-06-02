@@ -540,8 +540,14 @@ impl<T> fmt::Debug for RawMenuItem<T> {
 }
 
 impl<T> RawMenuItem<T> {
-    pub(crate) fn to_dbus_map(&self, property_filter: &[String]) -> HashMap<String, OwnedValue> {
-        let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(11);
+    pub(crate) fn to_dbus_map(&self, property_filter: &[String], has_children: bool) -> HashMap<String, OwnedValue> {
+        let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(12);
+        if has_children && (property_filter.is_empty() || property_filter.contains(&"children-display".to_string())) {
+            properties.insert(
+                "children-display".into(),
+                Str::from_static("submenu").into(),
+            );
+        }
 
         let default: RawMenuItem<T> = RawMenuItem::default();
         if_not_default_then_insert!(

@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use futures_util::{StreamExt, future::Either};
+use futures_util::{future::Either, StreamExt};
 use pastey::paste;
 use zbus::fdo::DBusProxy;
 use zbus::zvariant::{OwnedValue, Value};
@@ -650,7 +650,9 @@ mod tests {
         async_io::block_on(service.lock())
     }
 
-    fn layout_children(layout: &crate::dbus_interface::Layout) -> Vec<crate::dbus_interface::Layout> {
+    fn layout_children(
+        layout: &crate::dbus_interface::Layout,
+    ) -> Vec<crate::dbus_interface::Layout> {
         layout
             .children
             .iter()
@@ -722,9 +724,15 @@ mod tests {
         let root_children = layout_children(&layout);
 
         assert_eq!(root_children.len(), 2);
-        assert_eq!(owned_str(&root_children[0].properties, "label"), "root-submenu");
+        assert_eq!(
+            owned_str(&root_children[0].properties, "label"),
+            "root-submenu"
+        );
         assert_eq!(owned_str(&root_children[1].properties, "label"), "item");
-        assert_eq!(owned_str(&root_children[0].properties, "children-display"), "submenu");
+        assert_eq!(
+            owned_str(&root_children[0].properties, "children-display"),
+            "submenu"
+        );
         assert!(
             root_children[0].children.is_empty(),
             "recursionDepth=1 should not include grandchildren"
@@ -742,13 +750,22 @@ mod tests {
         let root_children = layout_children(&layout);
 
         assert_eq!(root_children.len(), 2);
-        assert_eq!(owned_str(&root_children[0].properties, "label"), "root-submenu");
+        assert_eq!(
+            owned_str(&root_children[0].properties, "label"),
+            "root-submenu"
+        );
         assert_eq!(owned_str(&root_children[1].properties, "label"), "item");
 
         let submenu_children = layout_children(&root_children[0]);
         assert_eq!(submenu_children.len(), 2);
-        assert_eq!(owned_str(&submenu_children[0].properties, "label"), "nested-submenu");
-        assert_eq!(owned_str(&submenu_children[1].properties, "label"), "nested-item");
+        assert_eq!(
+            owned_str(&submenu_children[0].properties, "label"),
+            "nested-submenu"
+        );
+        assert_eq!(
+            owned_str(&submenu_children[1].properties, "label"),
+            "nested-item"
+        );
         assert_eq!(
             owned_str(&submenu_children[0].properties, "children-display"),
             "submenu"
@@ -756,7 +773,10 @@ mod tests {
 
         let deep_children = layout_children(&submenu_children[0]);
         assert_eq!(deep_children.len(), 1);
-        assert_eq!(owned_str(&deep_children[0].properties, "label"), "deep-item");
+        assert_eq!(
+            owned_str(&deep_children[0].properties, "label"),
+            "deep-item"
+        );
         assert!(
             !deep_children[0].properties.contains_key("children-display"),
             "leaf items must not expose children-display"
@@ -771,11 +791,15 @@ mod tests {
         let root_layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
             .expect("root layout should exist");
-        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
-            .expect("root submenu should exist");
+        let root_submenu =
+            find_layout_by_label(&root_layout, "root-submenu").expect("root submenu should exist");
 
         let layout = service
-            .build_layout(root_submenu.id, None, vec!["label".into(), "children-display".into()])
+            .build_layout(
+                root_submenu.id,
+                None,
+                vec!["label".into(), "children-display".into()],
+            )
             .expect("submenu layout should exist");
         let subtree_children = layout_children(&layout);
 
@@ -783,8 +807,14 @@ mod tests {
         assert_eq!(owned_str(&layout.properties, "label"), "root-submenu");
         assert_eq!(owned_str(&layout.properties, "children-display"), "submenu");
         assert_eq!(subtree_children.len(), 2);
-        assert_eq!(owned_str(&subtree_children[0].properties, "label"), "nested-submenu");
-        assert_eq!(owned_str(&subtree_children[1].properties, "label"), "nested-item");
+        assert_eq!(
+            owned_str(&subtree_children[0].properties, "label"),
+            "nested-submenu"
+        );
+        assert_eq!(
+            owned_str(&subtree_children[1].properties, "label"),
+            "nested-item"
+        );
     }
 
     #[test]
@@ -808,7 +838,10 @@ mod tests {
         assert_eq!(layout.properties.len(), 1);
         assert_eq!(owned_str(&layout.properties, "children-display"), "submenu");
         assert_eq!(root_children[0].properties.len(), 1);
-        assert_eq!(owned_str(&root_children[0].properties, "children-display"), "submenu");
+        assert_eq!(
+            owned_str(&root_children[0].properties, "children-display"),
+            "submenu"
+        );
         assert!(root_children[1].properties.is_empty());
 
         let submenu_children = layout_children(&root_children[0]);
@@ -818,7 +851,9 @@ mod tests {
             "submenu"
         );
         assert!(submenu_children[1].properties.is_empty());
-        assert!(layout_children(&submenu_children[0])[0].properties.is_empty());
+        assert!(layout_children(&submenu_children[0])[0]
+            .properties
+            .is_empty());
     }
 
     #[test]
@@ -839,7 +874,10 @@ mod tests {
             !root_children[0].properties.contains_key("children-display"),
             "submenu must not have children-display when not in filter"
         );
-        assert_eq!(owned_str(&root_children[0].properties, "label"), "root-submenu");
+        assert_eq!(
+            owned_str(&root_children[0].properties, "label"),
+            "root-submenu"
+        );
         assert_eq!(root_children[0].properties.len(), 1);
     }
 
@@ -859,8 +897,8 @@ mod tests {
         let root_layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
             .expect("root layout should exist");
-        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
-            .expect("root-submenu should exist");
+        let root_submenu =
+            find_layout_by_label(&root_layout, "root-submenu").expect("root-submenu should exist");
 
         let properties = service
             .get_menu_item(root_submenu.id, &[])
@@ -878,8 +916,8 @@ mod tests {
         let root_layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
             .expect("root layout should exist");
-        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
-            .expect("root-submenu should exist");
+        let root_submenu =
+            find_layout_by_label(&root_layout, "root-submenu").expect("root-submenu should exist");
 
         let properties = service
             .get_menu_item(root_submenu.id, &["label".to_string()])
@@ -901,8 +939,8 @@ mod tests {
         let root_layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
             .expect("root layout should exist");
-        let root_submenu = find_layout_by_label(&root_layout, "root-submenu")
-            .expect("root-submenu should exist");
+        let root_submenu =
+            find_layout_by_label(&root_layout, "root-submenu").expect("root-submenu should exist");
 
         let properties = service
             .get_menu_item(root_submenu.id, &["children-display".to_string()])
@@ -920,8 +958,7 @@ mod tests {
         let root_layout = service
             .build_layout(0, None, vec!["label".into(), "children-display".into()])
             .expect("root layout should exist");
-        let item = find_layout_by_label(&root_layout, "item")
-            .expect("item should exist");
+        let item = find_layout_by_label(&root_layout, "item").expect("item should exist");
 
         let properties = service
             .get_menu_item(item.id, &[])
@@ -941,14 +978,7 @@ mod tests {
         let mut service = service.lock().await;
 
         let err = service
-            .event(
-                &conn,
-                false,
-                0,
-                "clicked",
-                OwnedValue::from(0_u8),
-                0,
-            )
+            .event(&conn, false, 0, "clicked", OwnedValue::from(0_u8), 0)
             .await
             .expect_err("root menu clicked should return InvalidArgs");
 

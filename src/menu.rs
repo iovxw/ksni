@@ -123,7 +123,7 @@ pub struct StandardItem<T> {
     /// update the tray after doing work elsewhere, call [`crate::Handle::update`].
     ///
     /// See the [examples/realworld.rs] for typical usage patterns.
-    /// 
+    ///
     /// [examples/realworld.rs]: https://github.com/iovxw/ksni/blob/master/examples/realworld.rs
     pub activate: Box<dyn Fn(&mut T) + Send>,
 }
@@ -363,11 +363,11 @@ pub struct RadioGroup<T> {
     /// Index of the current selected radio item
     pub selected: usize,
     /// Callback invoked when an item is selected
-    /// 
+    ///
     /// The first parameter is a mutable reference to the [`crate::Tray`] that
     /// owns this menu. Any changes you make to it inside the callback are
     /// propagated back to the menu after this callback returns.
-    /// 
+    ///
     /// The second parameter is the index of the user clicked radio item.
     ///
     /// The primary purpose of this callback is to notify your application
@@ -425,7 +425,7 @@ impl<T> From<RadioGroup<T>> for MenuItem<T> {
 }
 
 /// Not a menu item, but items of [`RadioGroup`]
-/// 
+///
 /// See [`RadioGroup`] for details
 pub struct RadioItem {
     /// Text of the item, except that:
@@ -540,9 +540,16 @@ impl<T> fmt::Debug for RawMenuItem<T> {
 }
 
 impl<T> RawMenuItem<T> {
-    pub(crate) fn to_dbus_map(&self, property_filter: &[String], has_children: bool) -> HashMap<String, OwnedValue> {
+    pub(crate) fn to_dbus_map(
+        &self,
+        property_filter: &[String],
+        has_children: bool,
+    ) -> HashMap<String, OwnedValue> {
         let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(12);
-        if has_children && (property_filter.is_empty() || property_filter.contains(&"children-display".to_string())) {
+        if has_children
+            && (property_filter.is_empty()
+                || property_filter.contains(&"children-display".to_string()))
+        {
             properties.insert(
                 "children-display".into(),
                 Str::from_static("submenu").into(),

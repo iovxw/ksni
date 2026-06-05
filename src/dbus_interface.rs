@@ -301,7 +301,11 @@ impl<T: Tray> DbusMenu<T> {
         } else {
             Ok(ids
                 .into_iter()
-                .filter_map(|id| service.get_menu_item(id, &property_names).map(|properties| (id, properties)))
+                .filter_map(|id| {
+                    service
+                        .get_menu_item(id, &property_names)
+                        .map(|properties| (id, properties))
+                })
                 .collect())
         }
     }

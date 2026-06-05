@@ -155,7 +155,9 @@ mod async_io {
                 state.driver_running.load(Ordering::Acquire)
             });
 
-            finish_tx.send(()).expect("first task should still be pending");
+            finish_tx
+                .send(())
+                .expect("first task should still be pending");
             done_rx
                 .recv_timeout(Duration::from_secs(1))
                 .expect("first task should complete");
@@ -223,7 +225,9 @@ mod async_io {
                 state.driver_running.load(Ordering::Acquire)
             });
 
-            finish_tx.send(()).expect("task after panic should still be pending");
+            finish_tx
+                .send(())
+                .expect("task after panic should still be pending");
             done_rx
                 .recv_timeout(Duration::from_secs(1))
                 .expect("task after panic should complete");

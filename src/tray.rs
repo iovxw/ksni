@@ -87,8 +87,8 @@ impl fmt::Display for Status {
 }
 
 impl Status {
-    pub(crate) fn to_menu_status(self) -> crate::menu::Status {
-        match self {
+    pub(crate) fn to_menu_status(&self) -> crate::menu::Status {
+        match *self {
             Self::Active | Self::Passive => crate::menu::Status::Normal,
             Self::NeedsAttention => crate::menu::Status::Notice,
         }

@@ -1,20 +1,20 @@
 # Unreleased
 
-## Fixed
-- Return `InvalidArgs` instead of panicking when a D-Bus client sends a root menu `clicked` event (`id=0`)
-- Improve async-io executor lifetime management to avoid keeping the background thread running while idle
-
-## Fixed (spec compliance)
-- Respect DBusMenu `recursionDepth` when building menu layouts
-- Return all items for empty DBusMenu `GetGroupProperties` calls
-- Correct DBusMenu `AboutToShow` and `AboutToShowGroup` argument handling
-- Correct DBusMenu status mapping for property updates
-
 ## Added
 - Mocked protocol test suites for StatusNotifierWatcher, StatusNotifierItem, and DBusMenu across tokio, async-io, and blocking runtimes
+- Lifetime management for the `async-io` executor to ensure no background thread when all trays stopped
 
 ## Changed
 - Report the unsupported `tokio + async-io` feature combination with an explicit compile-time error
+
+## Fixed (spec compliance)
+- Correct DBusMenu `GetGroupProperties` behavior on empty `ids`
+- Correct DBusMenu `GetLayout` `recursionDepth` (previously returned `recursionDepth + 1`)
+- Correct DBusMenu `AboutToShow` and `AboutToShowGroup` argument handling (regression introduced in 0.3)
+- Correct DBusMenu status mapping for property updates (regression introduced in 0.3)
+
+## Fixed
+- Don't panic when a D-Bus client sends a illegal root menu `clicked` event (`id=0`)
 
 # 0.3.4 (2026-04-10)
 

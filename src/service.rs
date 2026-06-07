@@ -391,64 +391,49 @@ impl<T: Tray> Service<T> {
     ) -> Option<Layout> {
         let root = self.id2index(parent_id)?;
 
-        let mut items: Vec<Option<(Layout, usize, Option<usize>)>> = self
-            .flattened_menu
-            .iter()
-            .enumerate()
-            .map(|(index, (item, submenu))| {
-                Some((
-                    Layout {
-                        id: self.index2id(index),
-                        properties: item.to_dbus_map(&property_filter, !submenu.is_empty()),
-                        children: Vec::with_capacity(submenu.len()),
-                    },
-                    0,
-                    recursion_depth,
-                ))
-            })
-            .collect();
-        let mut stack = vec![root];
+        let mut stack = vec![(root, 0, false)];
+        let mut pending_children: Vec<OwnedValue> = Vec::new();
 
-        while let Some(&current) = stack.last() {
-            let (_, next_child, remaining_depth) = items[current]
-                .as_ref()
-                .expect("stack pointer should always point to a valid item");
-            let children = &self.flattened_menu[current].1;
+        while let Some((index, depth, all_childs_processed)) = stack.pop() {
+            let (item, child_idxs) = &self.flattened_menu[index];
 
-            let should_descend = remaining_depth != &Some(0) && *next_child < children.len();
-            if should_descend {
-                let child = children[*next_child];
-                let (_, next_child, remaining_depth) = items[current]
-                    .as_mut()
-                    .expect("stack pointer should always point to a valid item");
-                *next_child += 1;
-                let next_depth = remaining_depth.map(|depth| depth.saturating_sub(1));
-                if let Some((_, _, child_depth)) = items[child].as_mut() {
-                    *child_depth = next_depth;
+            let reach_limit = recursion_depth.is_some_and(|limit| depth >= limit);
+
+            if all_childs_processed {
+                let child_count = if reach_limit { 0 } else { child_idxs.len() };
+                let children = pending_children.split_off(pending_children.len() - child_count);
+
+                let layout = Layout {
+                    id: self.index2id(index),
+                    properties: item.to_dbus_map(&property_filter, !child_idxs.is_empty()),
+                    children,
+                };
+
+                if index == root {
+                    // DONE
+                    return Some(layout);
                 }
-                stack.push(child);
-                continue;
-            }
 
-            let (layout, _, _) = items[current]
-                .take()
-                .expect("stack pointer should always point to a valid item");
-            stack.pop();
-            if let Some(&parent) = stack.last() {
-                items[parent]
-                    .as_mut()
-                    .expect("parent should always point to a valid item")
-                    .0
-                    .children
-                    .push(layout.try_into().expect(
-                        "Layout should not contain anything that can not be formatted as Value",
-                    ));
+                pending_children.push(
+                    layout
+                        .try_into()
+                        .expect("Layout should convert to OwnedValue"),
+                );
             } else {
-                return Some(layout);
+                stack.push((index, depth, true));
+
+                if !reach_limit {
+                    stack.extend(
+                        child_idxs
+                            .iter()
+                            .rev() // because pop
+                            .map(|&child_idx| (child_idx, depth + 1, false)),
+                    );
+                }
             }
         }
 
-        None
+        unreachable!("the root item should be processed at the end of loop");
     }
 
     pub fn get_menu_item(

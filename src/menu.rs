@@ -1,5 +1,6 @@
 //! Types used to construct a menu
 
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -517,12 +518,23 @@ macro_rules! if_not_default_then_insert {
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident) => {
         if_not_default_then_insert!($map, $item, $default, $filter, $property, (|r| r));
     };
+    ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $property_name: literal) => {{
+        if_not_default_then_insert!(
+            $map,
+            $item,
+            $default,
+            $filter,
+            $property,
+            $property_name,
+            (|r| r)
+        );
+    }};
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $to_refarg: tt) => {{
-        let name = stringify!($property).replace('_', "-");
+        let name = stringify!($property);
         if_not_default_then_insert!($map, $item, $default, $filter, $property, name, $to_refarg);
     }};
     ($map: ident, $item: ident, $default: ident, $filter: ident, $property: ident, $property_name: tt, $to_refarg: tt) => {
-        if ($filter.is_empty() || $filter.contains(&$property_name.to_string()))
+        if ($filter.is_empty() || $filter.iter().any(|s| s == $property_name))
             && $item.$property != $default.$property
         {
             $map.insert(
@@ -548,7 +560,7 @@ impl<T> RawMenuItem<T> {
         let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(12);
         if has_children
             && (property_filter.is_empty()
-                || property_filter.contains(&"children-display".to_string()))
+                || property_filter.iter().any(|s| s == "children-display"))
         {
             properties.insert(
                 "children-display".into(),
@@ -557,15 +569,7 @@ impl<T> RawMenuItem<T> {
         }
 
         let default: RawMenuItem<T> = RawMenuItem::default();
-        if_not_default_then_insert!(
-            properties,
-            self,
-            default,
-            property_filter,
-            r#type,
-            "type",
-            (|r: ItemType| r)
-        );
+        if_not_default_then_insert!(properties, self, default, property_filter, r#type, "type");
         if_not_default_then_insert!(
             properties,
             self,
@@ -582,6 +586,7 @@ impl<T> RawMenuItem<T> {
             default,
             property_filter,
             icon_name,
+            "icon-name",
             (|r: String| -> Str { r.into() })
         );
         if_not_default_then_insert!(
@@ -590,6 +595,7 @@ impl<T> RawMenuItem<T> {
             default,
             property_filter,
             icon_data,
+            "icon-data",
             (|r: Vec<u8>| -> OwnedValue {
                 Value::from(r)
                     .try_into()
@@ -608,17 +614,37 @@ impl<T> RawMenuItem<T> {
                     .expect("unreachable: Vec<Vec<String>> to OwnedValue")
             })
         );
-        if_not_default_then_insert!(properties, self, default, property_filter, toggle_type);
-        if_not_default_then_insert!(properties, self, default, property_filter, toggle_state);
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            property_filter,
+            toggle_type,
+            "toggle-type"
+        );
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            property_filter,
+            toggle_state,
+            "toggle-state"
+        );
         if_not_default_then_insert!(properties, self, default, property_filter, disposition);
 
         properties
     }
 
-    pub(crate) fn diff(&self, other: &Self) -> Option<(HashMap<String, OwnedValue>, Vec<String>)> {
+    pub(crate) fn diff(
+        &self,
+        other: &Self,
+    ) -> Option<(
+        HashMap<Cow<'static, str>, OwnedValue>,
+        Vec<Cow<'static, str>>,
+    )> {
         let default = Self::default();
-        let mut updated_props: HashMap<String, OwnedValue> = HashMap::new();
-        let mut removed_props = Vec::new();
+        let mut updated_props: HashMap<Cow<'static, str>, OwnedValue> = HashMap::new();
+        let mut removed_props: Vec<Cow<'static, str>> = Vec::new();
         if self.r#type != other.r#type {
             if other.r#type == default.r#type {
                 removed_props.push("type".into());

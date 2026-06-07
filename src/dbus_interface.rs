@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -397,8 +398,8 @@ impl<T: Tray> DbusMenu<T> {
     #[zbus(signal)]
     pub async fn items_properties_updated(
         ctxt: &SignalEmitter<'_>,
-        updated_props: Vec<(i32, HashMap<String, OwnedValue>)>,
-        removed_props: Vec<(i32, Vec<String>)>,
+        updated_props: Vec<(i32, HashMap<Cow<'static, str>, OwnedValue>)>,
+        removed_props: Vec<(i32, Vec<Cow<'static, str>>)>,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]

@@ -436,6 +436,22 @@ impl<T: Tray> Service<T> {
         unreachable!("the root item should be processed at the end of loop");
     }
 
+    pub fn get_all_item(
+        &self,
+        property_filter: &[String],
+    ) -> Vec<(i32, HashMap<String, OwnedValue>)> {
+        self.flattened_menu
+            .iter()
+            .enumerate()
+            .map(|(i, (item, children))| {
+                (
+                    i as i32,
+                    item.to_dbus_map(property_filter, !children.is_empty()),
+                )
+            })
+            .collect()
+    }
+
     pub fn get_menu_item(
         &self,
         id: i32,

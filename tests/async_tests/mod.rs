@@ -7,9 +7,8 @@ use zbus::zvariant::OwnedValue;
 
 use crate::common::{
     dbusmenu_assertions, decode_layout, find_layout_by_label, has_owner, menu_proxy, message_body,
-    mutate_sni_properties, properties, property_i32, property_string,
-    registration_and_watcher_assertions, session_connection, snapshot_events,
-    sni_property_and_method_assertions, sni_proxy, spawn_filtered_signal_waiter,
+    mutate_sni_properties, properties, registration_and_watcher_assertions, session_connection,
+    snapshot_events, sni_property_and_method_assertions, sni_proxy, spawn_filtered_signal_waiter,
     spawn_signal_waiter, watcher_proxy, LayoutTuple, MockWatcher, RegisterItemError, TestTray,
     WatcherState, DEFAULT_TIMEOUT, MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE, SNI_INTERFACE,
     SNI_PATH, WATCHER_NAME, WATCHER_PATH,
@@ -381,11 +380,13 @@ pub async fn status_notifier_item_protocol() {
         ) = message_body(sni_properties_changed.wait(DEFAULT_TIMEOUT));
         assert_eq!(sni_iface, SNI_INTERFACE);
         assert!(sni_invalidated.is_empty());
-        assert_eq!(property_string(&sni_changed, "Category"), "Communications");
-        assert_eq!(property_i32(&sni_changed, "WindowId"), 42);
         assert_eq!(
-            property_string(&sni_changed, "IconThemePath"),
-            "/tmp/mock-icons-updated"
+            sni_changed,
+            properties! {
+                "Category" => "Communications",
+                "WindowId" => 42_i32,
+                "IconThemePath" => "/tmp/mock-icons-updated",
+            }
         );
 
         let (menu_iface, menu_changed, menu_invalidated): (
@@ -395,15 +396,14 @@ pub async fn status_notifier_item_protocol() {
         ) = message_body(menu_properties_changed.wait(DEFAULT_TIMEOUT));
         assert_eq!(menu_iface, MENU_INTERFACE);
         assert!(menu_invalidated.is_empty());
-        assert_eq!(property_string(&menu_changed, "TextDirection"), "rtl");
-        assert_eq!(property_string(&menu_changed, "Status"), "notice");
-        let icon_paths: Vec<String> = menu_changed
-            .get("IconThemePath")
-            .expect("IconThemePath should be present")
-            .clone()
-            .try_into()
-            .unwrap();
-        assert_eq!(icon_paths, vec!["/tmp/mock-icons-updated".to_string()]);
+        assert_eq!(
+            menu_changed,
+            properties! {
+                "TextDirection" => "rtl",
+                "Status" => "notice",
+                "IconThemePath" => vec!["/tmp/mock-icons-updated".to_string()],
+            }
+        );
 
         let connection = session_connection();
         let proxy = sni_proxy(&connection, &service_name_for_checks);

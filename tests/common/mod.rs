@@ -439,42 +439,6 @@ pub fn find_layout_by_label<'a>(layout: &'a LayoutNode, label: &str) -> Option<&
         .find_map(|child| find_layout_by_label(child, label))
 }
 
-pub fn property_string(properties: &HashMap<String, OwnedValue>, key: &str) -> String {
-    properties
-        .get(key)
-        .unwrap_or_else(|| panic!("missing property: {key}"))
-        .clone()
-        .try_into()
-        .expect("property should decode into a string")
-}
-
-pub fn property_bytes(properties: &HashMap<String, OwnedValue>, key: &str) -> Vec<u8> {
-    properties
-        .get(key)
-        .unwrap_or_else(|| panic!("missing property: {key}"))
-        .clone()
-        .try_into()
-        .expect("property should decode into bytes")
-}
-
-pub fn property_shortcut(properties: &HashMap<String, OwnedValue>, key: &str) -> Vec<Vec<String>> {
-    properties
-        .get(key)
-        .unwrap_or_else(|| panic!("missing property: {key}"))
-        .clone()
-        .try_into()
-        .expect("property should decode into a shortcut list")
-}
-
-pub fn property_i32(properties: &HashMap<String, OwnedValue>, key: &str) -> i32 {
-    properties
-        .get(key)
-        .unwrap_or_else(|| panic!("missing property: {key}"))
-        .clone()
-        .try_into()
-        .expect("property should decode into an i32")
-}
-
 pub fn session_connection() -> Connection {
     connection::Builder::session()
         .expect("session bus builder should be available")

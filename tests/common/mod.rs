@@ -20,6 +20,31 @@ pub const MENU_INTERFACE: &str = "com.canonical.dbusmenu";
 pub const PROPERTIES_INTERFACE: &str = "org.freedesktop.DBus.Properties";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
 
+macro_rules! repetition_utils {
+    (@count $($tokens:tt),*) => {{
+        [$($crate::common::repetition_utils!(@replace $tokens => ())),*].len()
+    }};
+
+    (@replace $x:tt => $y:tt) => { $y }
+}
+
+macro_rules! properties {
+    () => {{ std::collections::HashMap::new() }};
+
+    ( $( $key:expr => $value:expr ),* $(,)? ) => {{
+        let mut map = std::collections::HashMap::with_capacity(
+            const { $crate::common::repetition_utils!(@count $($key),*) }
+        );
+        $(
+            let value = zbus::zvariant::Value::from($value).try_into_owned().unwrap();
+            map.insert($key.into(), value);
+        )*
+        map
+    }}
+}
+
+pub(crate) use {properties, repetition_utils};
+
 #[derive(Clone, Debug)]
 pub enum RegisterItemError {
     InvalidArgs(String),
@@ -692,58 +717,66 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
     let layout_all = decode_layout(layout_all);
     assert_eq!(layout_all.id, 0);
     assert_eq!(
-        property_string(&layout_all.properties, "children-display"),
-        "submenu"
+        layout_all.properties,
+        properties! { "children-display" => "submenu" }
     );
     assert_eq!(layout_all.children.len(), 5);
 
     let standard = find_layout_by_label(&layout_all, "Open").expect("standard item should exist");
-    assert_eq!(property_string(&standard.properties, "label"), "Open");
     assert_eq!(
-        property_string(&standard.properties, "icon-name"),
-        "open-icon"
+        standard.properties,
+        properties! {
+            "label" => "Open",
+            "icon-name" => "open-icon",
+            "icon-data" => vec![1_u8, 2, 3, 4],
+            "shortcut" => vec![vec!["Control".to_string(), "O".to_string()]],
+            "disposition" => "informative",
+        }
     );
-    assert_eq!(
-        property_bytes(&standard.properties, "icon-data"),
-        vec![1, 2, 3, 4]
-    );
-    assert_eq!(
-        property_shortcut(&standard.properties, "shortcut"),
-        vec![vec!["Control".to_string(), "O".to_string()]],
-    );
-    assert_eq!(
-        property_string(&standard.properties, "disposition"),
-        "informative"
-    );
-    assert!(!standard.properties.contains_key("enabled"));
 
     let checkmark =
         find_layout_by_label(&layout_all, "Pinned").expect("checkmark item should exist");
     assert_eq!(
-        property_string(&checkmark.properties, "toggle-type"),
-        "checkmark"
+        checkmark.properties,
+        properties! {
+            "label" => "Pinned",
+            "toggle-type" => "checkmark",
+            "toggle-state" => 1_i32,
+        }
     );
-    assert_eq!(property_i32(&checkmark.properties, "toggle-state"), 1);
 
     let submenu = find_layout_by_label(&layout_all, "More").expect("submenu should exist");
     assert_eq!(
-        property_string(&submenu.properties, "children-display"),
-        "submenu"
+        submenu.properties,
+        properties! {
+            "label" => "More",
+            "children-display" => "submenu",
+        }
     );
     assert_eq!(submenu.children.len(), 1);
     assert_eq!(
-        property_string(&submenu.children[0].properties, "label"),
-        "Nested"
+        submenu.children[0].properties,
+        properties! { "label" => "Nested" }
     );
 
     let radio_a = find_layout_by_label(&layout_all, "Mode A").expect("radio item A should exist");
     let radio_b = find_layout_by_label(&layout_all, "Mode B").expect("radio item B should exist");
-    assert_eq!(property_string(&radio_a.properties, "toggle-type"), "radio");
-    assert_eq!(property_i32(&radio_a.properties, "toggle-state"), 0);
-    assert_eq!(property_i32(&radio_b.properties, "toggle-state"), 1);
     assert_eq!(
-        property_string(&radio_b.properties, "disposition"),
-        "warning"
+        radio_a.properties,
+        properties! {
+            "label" => "Mode A",
+            "toggle-type" => "radio",
+            "toggle-state" => 0_i32,
+        }
+    );
+    assert_eq!(
+        radio_b.properties,
+        properties! {
+            "label" => "Mode B",
+            "toggle-type" => "radio",
+            "toggle-state" => 1_i32,
+            "disposition" => "warning",
+        }
     );
 
     let (_, layout_zero): (u32, LayoutTuple) = proxy
@@ -767,8 +800,8 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
     assert_eq!(group_all.len(), 7);
     assert_eq!(group_all[0].0, 0);
     assert_eq!(
-        property_string(&group_all[0].1, "children-display"),
-        "submenu"
+        group_all[0].1,
+        properties! { "children-display" => "submenu" }
     );
 
     let filtered: Vec<(i32, HashMap<String, OwnedValue>)> = proxy
@@ -778,8 +811,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
         )
         .unwrap();
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].1.len(), 1);
-    assert_eq!(property_string(&filtered[0].1, "label"), "Open");
+    assert_eq!(filtered[0].1, properties! { "label" => "Open" });
 
     let label_value: OwnedValue = proxy
         .call("GetProperty", &(standard.id, "label".to_string()))

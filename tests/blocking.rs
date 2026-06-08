@@ -8,12 +8,12 @@ mod common;
 
 use common::{
     dbusmenu_assertions, decode_layout, find_layout_by_label, has_owner, menu_proxy, message_body,
-    mutate_sni_properties, property_i32, property_string, registration_and_watcher_assertions,
-    session_connection, snapshot_events, sni_property_and_method_assertions, sni_proxy,
-    spawn_filtered_signal_waiter, spawn_signal_waiter, wait_until, watcher_proxy, LayoutNode,
-    LayoutTuple, MockWatcher, RegisterItemError, TestTray, WatcherState, DEFAULT_TIMEOUT,
-    MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE, SNI_INTERFACE, SNI_PATH, WATCHER_NAME,
-    WATCHER_PATH,
+    mutate_sni_properties, properties, property_i32, property_string,
+    registration_and_watcher_assertions, session_connection, snapshot_events,
+    sni_property_and_method_assertions, sni_proxy, spawn_filtered_signal_waiter,
+    spawn_signal_waiter, wait_until, watcher_proxy, LayoutTuple, MockWatcher, RegisterItemError,
+    TestTray, WatcherState, DEFAULT_TIMEOUT, MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE,
+    SNI_INTERFACE, SNI_PATH, WATCHER_NAME, WATCHER_PATH,
 };
 
 struct WatcherHandle {
@@ -349,12 +349,13 @@ fn dbusmenu_protocol() {
         Vec<(i32, Vec<String>)>,
     ) = message_body(items_properties_updated.wait(DEFAULT_TIMEOUT));
     assert!(removed_props.is_empty());
-    assert!(updated_props
-        .iter()
-        .any(|(_, properties)| properties.get("label").is_some()));
-    assert!(updated_props
-        .iter()
-        .any(|(_, properties)| properties.get("toggle-state").is_some()));
+    assert_eq!(
+        updated_props,
+        vec![
+            (1, properties! { "label" => "Open updated" }),
+            (2, properties! { "toggle-state" => 0_i32 }),
+        ]
+    );
 
     let layout_updated =
         spawn_signal_waiter(&service_name, MENU_PATH, MENU_INTERFACE, "LayoutUpdated");
@@ -558,24 +559,20 @@ fn menu_item_optional_properties() {
     let layout = decode_layout(layout);
 
     let standard = find_layout_by_label(&layout, "Open").expect("standard item should exist");
-    let enabled: bool = standard
-        .properties
-        .get("enabled")
-        .expect("enabled=false item must have the enabled property")
-        .clone()
-        .try_into()
-        .unwrap();
-    assert!(!enabled, "enabled property should be false");
-    let visible: bool = standard
-        .properties
-        .get("visible")
-        .expect("visible=false item must have the visible property")
-        .clone()
-        .try_into()
-        .unwrap();
-    assert!(!visible, "visible property should be false");
+    assert_eq!(
+        standard.properties,
+        properties! {
+            "label" => "Open",
+            "enabled" => false,
+            "visible" => false,
+            "icon-name" => "open-icon",
+            "icon-data" => vec![1_u8, 2, 3, 4],
+            "shortcut" => vec![vec!["Control".to_string(), "O".to_string()]],
+            "disposition" => "informative",
+        }
+    );
 
-    let separator: &LayoutNode = layout
+    let separator = layout
         .children
         .iter()
         .find(|node| {
@@ -585,10 +582,7 @@ fn menu_item_optional_properties() {
                 == Some("separator".to_string())
         })
         .expect("separator item should exist in the menu");
-    assert!(
-        !separator.properties.contains_key("label"),
-        "separators must not have a label"
-    );
+    assert_eq!(separator.properties, properties! { "type" => "separator" });
 
     handle.shutdown().wait();
     watcher.close();

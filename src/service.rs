@@ -586,7 +586,7 @@ fn hash_of<T: Hash>(v: T) -> u64 {
 
 #[cfg(all(test, any(feature = "tokio", feature = "async-io")))]
 mod tests {
-    use std::{borrow::Cow, collections::HashMap, sync::Arc};
+    use std::sync::Arc;
 
     use super::Service;
     use crate::{menu::StandardItem, Tray};
@@ -662,13 +662,27 @@ mod tests {
             .collect()
     }
 
-    fn get_string(properties: &HashMap<Cow<'static, str>, OwnedValue>, key: &str) -> String {
-        properties
-            .get(key)
-            .unwrap_or_else(|| panic!("missing property: {key}"))
-            .clone()
-            .try_into()
-            .unwrap()
+    macro_rules! repetition_utils {
+        (@count $($tokens:tt),*) => {{
+            [$(repetition_utils!(@replace $tokens => ())),*].len()
+        }};
+
+        (@replace $x:tt => $y:tt) => { $y }
+    }
+
+    macro_rules! properties {
+        () => {{ std::collections::HashMap::new() }};
+
+        ( $( $key:expr => $value:expr ),* $(,)? ) => {{
+            let mut map = std::collections::HashMap::with_capacity(
+                const { repetition_utils!(@count $($key),*) }
+            );
+            $(
+                let value = zbus::zvariant::Value::from($value).try_into_owned().unwrap();
+                map.insert($key.into(), value);
+            )*
+            map
+        }}
     }
 
     fn find_layout_by_label(
@@ -708,8 +722,8 @@ mod tests {
 
         assert_eq!(layout.id, 0);
         assert_eq!(
-            get_string(&layout.properties, "children-display"),
-            "submenu"
+            layout.properties,
+            properties! { "children-display" => "submenu" }
         );
         assert!(
             layout.children.is_empty(),
@@ -729,13 +743,15 @@ mod tests {
 
         assert_eq!(root_children.len(), 2);
         assert_eq!(
-            get_string(&root_children[0].properties, "label"),
-            "root-submenu"
+            root_children[0].properties,
+            properties! {
+                "label" => "root-submenu",
+                "children-display" => "submenu",
+            }
         );
-        assert_eq!(get_string(&root_children[1].properties, "label"), "item");
         assert_eq!(
-            get_string(&root_children[0].properties, "children-display"),
-            "submenu"
+            root_children[1].properties,
+            properties! { "label" => "item" }
         );
         assert!(
             root_children[0].children.is_empty(),
@@ -755,35 +771,36 @@ mod tests {
 
         assert_eq!(root_children.len(), 2);
         assert_eq!(
-            get_string(&root_children[0].properties, "label"),
-            "root-submenu"
+            root_children[0].properties,
+            properties! {
+                "label" => "root-submenu",
+                "children-display" => "submenu",
+            }
         );
-        assert_eq!(get_string(&root_children[1].properties, "label"), "item");
+        assert_eq!(
+            root_children[1].properties,
+            properties! { "label" => "item" }
+        );
 
         let submenu_children = layout_children(&root_children[0]);
         assert_eq!(submenu_children.len(), 2);
         assert_eq!(
-            get_string(&submenu_children[0].properties, "label"),
-            "nested-submenu"
+            submenu_children[0].properties,
+            properties! {
+                "label" => "nested-submenu",
+                "children-display" => "submenu",
+            }
         );
         assert_eq!(
-            get_string(&submenu_children[1].properties, "label"),
-            "nested-item"
-        );
-        assert_eq!(
-            get_string(&submenu_children[0].properties, "children-display"),
-            "submenu"
+            submenu_children[1].properties,
+            properties! { "label" => "nested-item" }
         );
 
         let deep_children = layout_children(&submenu_children[0]);
         assert_eq!(deep_children.len(), 1);
         assert_eq!(
-            get_string(&deep_children[0].properties, "label"),
-            "deep-item"
-        );
-        assert!(
-            !deep_children[0].properties.contains_key("children-display"),
-            "leaf items must not expose children-display"
+            deep_children[0].properties,
+            properties! { "label" => "deep-item" }
         );
     }
 
@@ -808,19 +825,24 @@ mod tests {
         let subtree_children = layout_children(&layout);
 
         assert_eq!(layout.id, root_submenu.id);
-        assert_eq!(get_string(&layout.properties, "label"), "root-submenu");
         assert_eq!(
-            get_string(&layout.properties, "children-display"),
-            "submenu"
+            layout.properties,
+            properties! {
+                "label" => "root-submenu",
+                "children-display" => "submenu",
+            }
         );
         assert_eq!(subtree_children.len(), 2);
         assert_eq!(
-            get_string(&subtree_children[0].properties, "label"),
-            "nested-submenu"
+            subtree_children[0].properties,
+            properties! {
+                "label" => "nested-submenu",
+                "children-display" => "submenu",
+            }
         );
         assert_eq!(
-            get_string(&subtree_children[1].properties, "label"),
-            "nested-item"
+            subtree_children[1].properties,
+            properties! { "label" => "nested-item" }
         );
     }
 
@@ -842,28 +864,26 @@ mod tests {
             .expect("root layout should exist");
         let root_children = layout_children(&layout);
 
-        assert_eq!(layout.properties.len(), 1);
         assert_eq!(
-            get_string(&layout.properties, "children-display"),
-            "submenu"
+            layout.properties,
+            properties! { "children-display" => "submenu" }
         );
-        assert_eq!(root_children[0].properties.len(), 1);
         assert_eq!(
-            get_string(&root_children[0].properties, "children-display"),
-            "submenu"
+            root_children[0].properties,
+            properties! { "children-display" => "submenu" }
         );
-        assert!(root_children[1].properties.is_empty());
+        assert_eq!(root_children[1].properties, properties! {});
 
         let submenu_children = layout_children(&root_children[0]);
-        assert_eq!(submenu_children[0].properties.len(), 1);
         assert_eq!(
-            get_string(&submenu_children[0].properties, "children-display"),
-            "submenu"
+            submenu_children[0].properties,
+            properties! { "children-display" => "submenu" }
         );
-        assert!(submenu_children[1].properties.is_empty());
-        assert!(layout_children(&submenu_children[0])[0]
-            .properties
-            .is_empty());
+        assert_eq!(submenu_children[1].properties, properties! {});
+        assert_eq!(
+            layout_children(&submenu_children[0])[0].properties,
+            properties! {}
+        );
     }
 
     #[test]
@@ -876,19 +896,15 @@ mod tests {
             .expect("root layout should exist");
         let root_children = layout_children(&layout);
 
-        assert!(
-            !layout.properties.contains_key("children-display"),
-            "root must not have children-display when not in filter"
-        );
-        assert!(
-            !root_children[0].properties.contains_key("children-display"),
-            "submenu must not have children-display when not in filter"
+        assert_eq!(layout.properties, properties! {});
+        assert_eq!(
+            root_children[0].properties,
+            properties! { "label" => "root-submenu" }
         );
         assert_eq!(
-            get_string(&root_children[0].properties, "label"),
-            "root-submenu"
+            root_children[1].properties,
+            properties! { "label" => "item" }
         );
-        assert_eq!(root_children[0].properties.len(), 1);
     }
 
     #[test]
@@ -914,8 +930,13 @@ mod tests {
             .get_menu_item(root_submenu.id, &[])
             .expect("root-submenu should exist");
 
-        assert_eq!(get_string(&properties, "label"), "root-submenu");
-        assert_eq!(get_string(&properties, "children-display"), "submenu");
+        assert_eq!(
+            properties,
+            properties! {
+                "label" => "root-submenu",
+                "children-display" => "submenu",
+            }
+        );
     }
 
     #[test]
@@ -933,12 +954,7 @@ mod tests {
             .get_menu_item(root_submenu.id, &["label".to_string()])
             .expect("root-submenu should exist");
 
-        assert_eq!(properties.len(), 1);
-        assert_eq!(get_string(&properties, "label"), "root-submenu");
-        assert!(
-            !properties.contains_key("children-display"),
-            "children-display must not appear when not in filter"
-        );
+        assert_eq!(properties, properties! { "label" => "root-submenu" });
     }
 
     #[test]
@@ -956,8 +972,7 @@ mod tests {
             .get_menu_item(root_submenu.id, &["children-display".to_string()])
             .expect("root-submenu should exist");
 
-        assert_eq!(properties.len(), 1);
-        assert_eq!(get_string(&properties, "children-display"), "submenu");
+        assert_eq!(properties, properties! { "children-display" => "submenu" });
     }
 
     #[test]
@@ -974,10 +989,7 @@ mod tests {
             .get_menu_item(item.id, &[])
             .expect("item should exist");
 
-        assert!(
-            !properties.contains_key("children-display"),
-            "leaf items must never have children-display"
-        );
+        assert_eq!(properties, properties! { "label" => "item" });
     }
 
     #[cfg_attr(feature = "tokio", tokio::test)]

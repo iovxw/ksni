@@ -538,7 +538,7 @@ macro_rules! if_not_default_then_insert {
             && $item.$property != $default.$property
         {
             $map.insert(
-                $property_name.to_string(),
+                $property_name.into(),
                 OwnedValue::from($to_refarg($item.$property.clone())),
             );
         }
@@ -556,8 +556,8 @@ impl<T> RawMenuItem<T> {
         &self,
         property_filter: &[String],
         has_children: bool,
-    ) -> HashMap<String, OwnedValue> {
-        let mut properties: HashMap<String, OwnedValue> = HashMap::with_capacity(12);
+    ) -> HashMap<Cow<'static, str>, OwnedValue> {
+        let mut properties: HashMap<Cow<'static, str>, OwnedValue> = HashMap::with_capacity(12);
         if has_children
             && (property_filter.is_empty()
                 || property_filter.iter().any(|s| s == "children-display"))

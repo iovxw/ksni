@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use zbus::names::InterfaceName;
-use zbus::zvariant::{ObjectPath, OwnedValue, Type, Value};
+use zbus::zvariant::{self, ObjectPath, OwnedValue, Type, Value};
 use zbus::{object_server::SignalEmitter, Connection};
 
 use crate::compat::Mutex;
@@ -227,11 +227,80 @@ impl<T: Tray> StatusNotifierItem<T> {
     pub async fn new_status(ctxt: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
 }
 
-#[derive(Debug, Default, Type, Serialize, Deserialize, Value, OwnedValue)]
+#[derive(Debug, Default, Type, Serialize, Deserialize)]
 pub struct Layout {
     pub id: i32,
-    pub properties: HashMap<String, OwnedValue>,
+    pub properties: HashMap<Cow<'static, str>, OwnedValue>,
     pub children: Vec<OwnedValue>,
+}
+
+impl<'a> TryFrom<Value<'a>> for Layout {
+    type Error = zvariant::Error;
+    fn try_from(value: Value<'a>) -> zvariant::Result<Self> {
+        let mut fields = zvariant::Structure::try_from(value)?.into_fields();
+        Ok(Self {
+            id: fields.remove(0).downcast()?,
+            properties: fields.remove(0).downcast::<ItemPropsValueHelper>()?.0,
+            children: fields.remove(0).downcast()?,
+        })
+    }
+}
+
+impl TryFrom<OwnedValue> for Layout {
+    type Error = zvariant::Error;
+    fn try_from(value: OwnedValue) -> zvariant::Result<Self> {
+        <Self as TryFrom<Value<'static>>>::try_from(value.into())
+    }
+}
+
+impl From<Layout> for OwnedValue {
+    fn from(s: Layout) -> Self {
+        Value::from(
+            zvariant::StructureBuilder::new()
+                .add_field(s.id)
+                .add_field(s.properties)
+                .add_field(s.children)
+                .build()
+                .unwrap(),
+        )
+        .try_into_owned()
+        .expect("Layout should not contains any fd")
+    }
+}
+
+impl<'a> From<Layout> for Value<'a> {
+    fn from(s: Layout) -> Self {
+        OwnedValue::from(s).into()
+    }
+}
+
+/// FIXME: remove this after `From<zbus::zvariant::Value<'_>>` is implemented for `Cow<'_, str>`
+struct ItemPropsValueHelper(HashMap<Cow<'static, str>, OwnedValue>);
+
+impl<'a> TryFrom<Value<'a>> for ItemPropsValueHelper {
+    type Error = zvariant::Error;
+
+    fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
+        if let Value::Dict(v) = value {
+            v.into_iter()
+                .map(|(key, value)| {
+                    let key = String::try_from(if let Value::Value(v) = key { *v } else { key })
+                        .map(Into::into)?;
+
+                    let value = OwnedValue::try_from(if let Value::Value(v) = value {
+                        *v
+                    } else {
+                        value
+                    })?;
+
+                    Ok((key, value))
+                })
+                .collect::<Result<HashMap<Cow<'static, str>, OwnedValue>, _>>()
+                .map(ItemPropsValueHelper)
+        } else {
+            Err(Self::Error::IncorrectType)
+        }
+    }
 }
 
 pub struct DbusMenu<T>(Arc<Mutex<Service<T>>>);
@@ -269,7 +338,7 @@ impl<T: Tray> DbusMenu<T> {
         &self,
         ids: Vec<i32>,
         property_names: Vec<String>,
-    ) -> zbus::fdo::Result<Vec<(i32, HashMap<String, OwnedValue>)>> {
+    ) -> zbus::fdo::Result<Vec<(i32, HashMap<Cow<'static, str>, OwnedValue>)>> {
         let service = self.0.lock().await; // do NOT use any self methods after this
         if ids.is_empty() {
             Ok(service.get_all_item(&property_names))

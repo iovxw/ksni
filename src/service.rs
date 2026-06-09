@@ -638,16 +638,16 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
-    fn blocking_lock_service<'a>(
-        service: &'a Arc<crate::compat::Mutex<Service<TestTray>>>,
-    ) -> tokio::sync::MutexGuard<'a, Service<TestTray>> {
+    fn blocking_lock_service<'a, T>(
+        service: &'a Arc<crate::compat::Mutex<Service<T>>>,
+    ) -> tokio::sync::MutexGuard<'a, Service<T>> {
         service.blocking_lock()
     }
 
     #[cfg(feature = "async-io")]
-    fn blocking_lock_service<'a>(
-        service: &'a Arc<crate::compat::Mutex<Service<TestTray>>>,
-    ) -> async_lock::MutexGuard<'a, Service<TestTray>> {
+    fn blocking_lock_service<'a, T>(
+        service: &'a Arc<crate::compat::Mutex<Service<T>>>,
+    ) -> async_lock::MutexGuard<'a, Service<T>> {
         async_io::block_on(service.lock())
     }
 
@@ -728,6 +728,634 @@ mod tests {
         assert!(
             layout.children.is_empty(),
             "recursionDepth=0 must not include children"
+        );
+    }
+
+    #[test]
+    fn build_layout_generates_complex_deeply_nested_menu() {
+        #[derive(Clone, Default)]
+        struct ComplexTray;
+
+        impl Tray for ComplexTray {
+            fn id(&self) -> String {
+                "complex-tray".into()
+            }
+
+            fn menu(&self) -> Vec<crate::MenuItem<Self>> {
+                vec![
+                    crate::menu::SubMenu {
+                        label: "0".into(),
+                        submenu: vec![
+                            StandardItem {
+                                label: "0.0".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            crate::menu::SubMenu {
+                                label: "0.1".into(),
+                                submenu: vec![
+                                    StandardItem {
+                                        label: "0.1.0".into(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                    crate::menu::SubMenu {
+                                        label: "0.1.1".into(),
+                                        submenu: vec![
+                                            StandardItem {
+                                                label: "0.1.1.0".into(),
+                                                ..Default::default()
+                                            }
+                                            .into(),
+                                            crate::menu::SubMenu {
+                                                label: "0.1.1.1".into(),
+                                                submenu: vec![
+                                                    crate::menu::SubMenu {
+                                                        label: "0.1.1.1.0".into(),
+                                                        submenu: vec![
+                                                            StandardItem {
+                                                                label: "0.1.1.1.0.0".into(),
+                                                                ..Default::default()
+                                                            }
+                                                            .into(),
+                                                            crate::menu::SubMenu {
+                                                                label: "0.1.1.1.0.1".into(),
+                                                                submenu: vec![StandardItem {
+                                                                    label: "0.1.1.1.0.1.0".into(),
+                                                                    ..Default::default()
+                                                                }
+                                                                .into()],
+                                                                ..Default::default()
+                                                            }
+                                                            .into(),
+                                                        ],
+                                                        ..Default::default()
+                                                    }
+                                                    .into(),
+                                                    StandardItem {
+                                                        label: "0.1.1.1.1".into(),
+                                                        ..Default::default()
+                                                    }
+                                                    .into(),
+                                                ],
+                                                ..Default::default()
+                                            }
+                                            .into(),
+                                            StandardItem {
+                                                label: "0.1.1.2".into(),
+                                                ..Default::default()
+                                            }
+                                            .into(),
+                                        ],
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                    StandardItem {
+                                        label: "0.1.2".into(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                ],
+                                ..Default::default()
+                            }
+                            .into(),
+                            StandardItem {
+                                label: "0.2".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            crate::menu::SubMenu {
+                                label: "0.3".into(),
+                                submenu: vec![StandardItem {
+                                    label: "0.3.0".into(),
+                                    ..Default::default()
+                                }
+                                .into()],
+                                ..Default::default()
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into(),
+                    StandardItem {
+                        label: "1".into(),
+                        ..Default::default()
+                    }
+                    .into(),
+                    crate::menu::SubMenu {
+                        label: "2".into(),
+                        submenu: vec![
+                            StandardItem {
+                                label: "2.0".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            crate::menu::SubMenu {
+                                label: "2.1".into(),
+                                submenu: vec![
+                                    StandardItem {
+                                        label: "2.1.0".into(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                    StandardItem {
+                                        label: "2.1.1".into(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                    crate::menu::SubMenu {
+                                        label: "2.1.2".into(),
+                                        submenu: vec![StandardItem {
+                                            label: "2.1.2.0".into(),
+                                            ..Default::default()
+                                        }
+                                        .into()],
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                ],
+                                ..Default::default()
+                            }
+                            .into(),
+                            StandardItem {
+                                label: "2.2".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into(),
+                    crate::menu::SubMenu {
+                        label: "3".into(),
+                        submenu: vec![
+                            crate::menu::SubMenu {
+                                label: "3.0".into(),
+                                submenu: vec![crate::menu::SubMenu {
+                                    label: "3.0.0".into(),
+                                    submenu: vec![
+                                        StandardItem {
+                                            label: "3.0.0.0".into(),
+                                            ..Default::default()
+                                        }
+                                        .into(),
+                                        StandardItem {
+                                            label: "3.0.0.1".into(),
+                                            ..Default::default()
+                                        }
+                                        .into(),
+                                        crate::menu::SubMenu {
+                                            label: "3.0.0.2".into(),
+                                            submenu: Vec::new(),
+                                            ..Default::default()
+                                        }
+                                        .into(),
+                                        StandardItem {
+                                            label: "3.0.0.3".into(),
+                                            ..Default::default()
+                                        }
+                                        .into(),
+                                    ],
+                                    ..Default::default()
+                                }
+                                .into()],
+                                ..Default::default()
+                            }
+                            .into(),
+                            StandardItem {
+                                label: "3.1".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            crate::menu::SubMenu {
+                                label: "3.2".into(),
+                                submenu: Vec::new(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            StandardItem {
+                                label: "3.3".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            crate::menu::SubMenu {
+                                label: "3.4".into(),
+                                submenu: vec![
+                                    StandardItem {
+                                        label: "3.4.0".into(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                    StandardItem {
+                                        label: "3.4.1".into(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                    crate::menu::SubMenu {
+                                        label: "3.4.2".into(),
+                                        submenu: Vec::new(),
+                                        ..Default::default()
+                                    }
+                                    .into(),
+                                ],
+                                ..Default::default()
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into(),
+                    crate::menu::SubMenu {
+                        label: "4".into(),
+                        submenu: Vec::new(),
+                        ..Default::default()
+                    }
+                    .into(),
+                    StandardItem {
+                        label: "5".into(),
+                        ..Default::default()
+                    }
+                    .into(),
+                    crate::menu::SubMenu {
+                        label: "6".into(),
+                        submenu: vec![
+                            StandardItem {
+                                label: "6.0".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            crate::menu::SubMenu {
+                                label: "6.1".into(),
+                                submenu: Vec::new(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            StandardItem {
+                                label: "6.2".into(),
+                                ..Default::default()
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into(),
+                ]
+            }
+        }
+
+        let service = Service::new(ComplexTray);
+        let service = blocking_lock_service(&service);
+
+        let layout = service
+            .build_layout(0, None, vec!["label".into(), "children-display".into()])
+            .expect("root layout should exist");
+
+        assert_eq!(
+            layout,
+            crate::dbus_interface::Layout {
+                id: 0,
+                properties: properties! { "children-display" => "submenu" },
+                children: vec![
+                    crate::dbus_interface::Layout {
+                        id: 1,
+                        properties: properties! {
+                            "label" => "0",
+                            "children-display" => "submenu",
+                        },
+                        children: vec![
+                            crate::dbus_interface::Layout {
+                                id: 2,
+                                properties: properties! { "label" => "0.0" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 3,
+                                properties: properties! {
+                                    "label" => "0.1",
+                                    "children-display" => "submenu",
+                                },
+                                children: vec![
+                                    crate::dbus_interface::Layout {
+                                        id: 4,
+                                        properties: properties! { "label" => "0.1.0" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                    crate::dbus_interface::Layout {
+                                        id: 5,
+                                        properties: properties! {
+                                            "label" => "0.1.1",
+                                            "children-display" => "submenu",
+                                        },
+                                        children: vec![
+                                            crate::dbus_interface::Layout {
+                                                id: 6,
+                                                properties: properties! { "label" => "0.1.1.0" },
+                                                children: vec![],
+                                            }
+                                            .into(),
+                                            crate::dbus_interface::Layout {
+                                                id: 7,
+                                                properties: properties! {
+                                                    "label" => "0.1.1.1",
+                                                    "children-display" => "submenu",
+                                                },
+                                                children: vec![
+                                                    crate::dbus_interface::Layout {
+                                                        id: 8,
+                                                        properties: properties! {
+                                                            "label" => "0.1.1.1.0",
+                                                            "children-display" => "submenu",
+                                                        },
+                                                        children: vec![
+                                                            crate::dbus_interface::Layout {
+                                                                id: 9,
+                                                                properties: properties! {
+                                                                    "label" => "0.1.1.1.0.0"
+                                                                },
+                                                                children: vec![],
+                                                            }
+                                                            .into(),
+                                                            crate::dbus_interface::Layout {
+                                                                id: 10,
+                                                                properties: properties! {
+                                                                    "label" => "0.1.1.1.0.1",
+                                                                    "children-display" => "submenu",
+                                                                },
+                                                                children: vec![
+                                                                    crate::dbus_interface::Layout {
+                                                                        id: 11,
+                                                                        properties: properties! {
+                                                                            "label" =>
+                                                                                "0.1.1.1.0.1.0"
+                                                                        },
+                                                                        children: vec![],
+                                                                    }
+                                                                    .into(),
+                                                                ],
+                                                            }
+                                                            .into(),
+                                                        ],
+                                                    }
+                                                    .into(),
+                                                    crate::dbus_interface::Layout {
+                                                        id: 12,
+                                                        properties: properties! {
+                                                            "label" => "0.1.1.1.1"
+                                                        },
+                                                        children: vec![],
+                                                    }
+                                                    .into(),
+                                                ],
+                                            }
+                                            .into(),
+                                            crate::dbus_interface::Layout {
+                                                id: 13,
+                                                properties: properties! { "label" => "0.1.1.2" },
+                                                children: vec![],
+                                            }
+                                            .into(),
+                                        ],
+                                    }
+                                    .into(),
+                                    crate::dbus_interface::Layout {
+                                        id: 14,
+                                        properties: properties! { "label" => "0.1.2" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                ],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 15,
+                                properties: properties! { "label" => "0.2" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 16,
+                                properties: properties! {
+                                    "label" => "0.3",
+                                    "children-display" => "submenu",
+                                },
+                                children: vec![crate::dbus_interface::Layout {
+                                    id: 17,
+                                    properties: properties! { "label" => "0.3.0" },
+                                    children: vec![],
+                                }
+                                .into(),],
+                            }
+                            .into(),
+                        ],
+                    }
+                    .into(),
+                    crate::dbus_interface::Layout {
+                        id: 18,
+                        properties: properties! { "label" => "1" },
+                        children: vec![],
+                    }
+                    .into(),
+                    crate::dbus_interface::Layout {
+                        id: 19,
+                        properties: properties! {
+                            "label" => "2",
+                            "children-display" => "submenu",
+                        },
+                        children: vec![
+                            crate::dbus_interface::Layout {
+                                id: 20,
+                                properties: properties! { "label" => "2.0" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 21,
+                                properties: properties! {
+                                    "label" => "2.1",
+                                    "children-display" => "submenu",
+                                },
+                                children: vec![
+                                    crate::dbus_interface::Layout {
+                                        id: 22,
+                                        properties: properties! { "label" => "2.1.0" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                    crate::dbus_interface::Layout {
+                                        id: 23,
+                                        properties: properties! { "label" => "2.1.1" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                    crate::dbus_interface::Layout {
+                                        id: 24,
+                                        properties: properties! {
+                                            "label" => "2.1.2",
+                                            "children-display" => "submenu",
+                                        },
+                                        children: vec![crate::dbus_interface::Layout {
+                                            id: 25,
+                                            properties: properties! { "label" => "2.1.2.0" },
+                                            children: vec![],
+                                        }
+                                        .into(),],
+                                    }
+                                    .into(),
+                                ],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 26,
+                                properties: properties! { "label" => "2.2" },
+                                children: vec![],
+                            }
+                            .into(),
+                        ],
+                    }
+                    .into(),
+                    crate::dbus_interface::Layout {
+                        id: 27,
+                        properties: properties! {
+                            "label" => "3",
+                            "children-display" => "submenu",
+                        },
+                        children: vec![
+                            crate::dbus_interface::Layout {
+                                id: 28,
+                                properties: properties! {
+                                    "label" => "3.0",
+                                    "children-display" => "submenu",
+                                },
+                                children: vec![crate::dbus_interface::Layout {
+                                    id: 29,
+                                    properties: properties! {
+                                        "label" => "3.0.0",
+                                        "children-display" => "submenu",
+                                    },
+                                    children: vec![
+                                        crate::dbus_interface::Layout {
+                                            id: 30,
+                                            properties: properties! { "label" => "3.0.0.0" },
+                                            children: vec![],
+                                        }
+                                        .into(),
+                                        crate::dbus_interface::Layout {
+                                            id: 31,
+                                            properties: properties! { "label" => "3.0.0.1" },
+                                            children: vec![],
+                                        }
+                                        .into(),
+                                        crate::dbus_interface::Layout {
+                                            id: 32,
+                                            properties: properties! { "label" => "3.0.0.2" },
+                                            children: vec![],
+                                        }
+                                        .into(),
+                                        crate::dbus_interface::Layout {
+                                            id: 33,
+                                            properties: properties! { "label" => "3.0.0.3" },
+                                            children: vec![],
+                                        }
+                                        .into(),
+                                    ],
+                                }
+                                .into(),],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 34,
+                                properties: properties! { "label" => "3.1" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 35,
+                                properties: properties! { "label" => "3.2" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 36,
+                                properties: properties! { "label" => "3.3" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 37,
+                                properties: properties! {
+                                    "label" => "3.4",
+                                    "children-display" => "submenu",
+                                },
+                                children: vec![
+                                    crate::dbus_interface::Layout {
+                                        id: 38,
+                                        properties: properties! { "label" => "3.4.0" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                    crate::dbus_interface::Layout {
+                                        id: 39,
+                                        properties: properties! { "label" => "3.4.1" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                    crate::dbus_interface::Layout {
+                                        id: 40,
+                                        properties: properties! { "label" => "3.4.2" },
+                                        children: vec![],
+                                    }
+                                    .into(),
+                                ],
+                            }
+                            .into(),
+                        ],
+                    }
+                    .into(),
+                    crate::dbus_interface::Layout {
+                        id: 41,
+                        properties: properties! { "label" => "4" },
+                        children: vec![],
+                    }
+                    .into(),
+                    crate::dbus_interface::Layout {
+                        id: 42,
+                        properties: properties! { "label" => "5" },
+                        children: vec![],
+                    }
+                    .into(),
+                    crate::dbus_interface::Layout {
+                        id: 43,
+                        properties: properties! {
+                            "label" => "6",
+                            "children-display" => "submenu",
+                        },
+                        children: vec![
+                            crate::dbus_interface::Layout {
+                                id: 44,
+                                properties: properties! { "label" => "6.0" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 45,
+                                properties: properties! { "label" => "6.1" },
+                                children: vec![],
+                            }
+                            .into(),
+                            crate::dbus_interface::Layout {
+                                id: 46,
+                                properties: properties! { "label" => "6.2" },
+                                children: vec![],
+                            }
+                            .into(),
+                        ],
+                    }
+                    .into(),
+                ],
+            }
         );
     }
 

@@ -227,7 +227,7 @@ impl<T: Tray> StatusNotifierItem<T> {
     pub async fn new_status(ctxt: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
 }
 
-#[derive(Debug, Default, Type, Serialize, Deserialize)]
+#[derive(Debug, Default, Type, Serialize, Deserialize, PartialEq)]
 pub struct Layout {
     pub id: i32,
     pub properties: HashMap<Cow<'static, str>, OwnedValue>,

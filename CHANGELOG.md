@@ -1,4 +1,4 @@
-# Unreleased
+# 0.3.5 (2026-06-10)
 
 ## Added
 - Mocked protocol test suites for StatusNotifierWatcher, StatusNotifierItem, and DBusMenu across tokio, async-io, and blocking runtimes

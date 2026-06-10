@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use zbus::names::InterfaceName;
 use zbus::zvariant::{self, ObjectPath, OwnedValue, Type, Value};
 use zbus::{object_server::SignalEmitter, Connection};

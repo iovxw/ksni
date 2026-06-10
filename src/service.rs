@@ -107,7 +107,7 @@ pub(crate) async fn run<T: Tray>(
     // - KDE Plasma: RegisterStatusNotifierHost is a no-op, IsStatusNotifierHostRegistered always
     //   returns true, and StatusNotifierHostRegistered is never emitted.
     //   https://github.com/KDE/plasma-workspace/blob/6112145c/statusnotifierwatcher/statusnotifierwatcher.cpp#L92-L100
-    // - GNOME AppIndicator: RegisterStatusNotifierHost returns NOT_SUPPORTED, IsStatusNotifierHostRegistered
+    // - GNOME: RegisterStatusNotifierHost returns NOT_SUPPORTED, IsStatusNotifierHostRegistered
     //   always returns true, and StatusNotifierHostRegistered is emitted once in the constructor.
     //   https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/f187dba/statusNotifierWatcher.js#L65
     //   https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/f187dba/statusNotifierWatcher.js#L278-L280
@@ -392,7 +392,7 @@ impl<T: Tray> Service<T> {
         let root = self.id2index(parent_id)?;
 
         let mut stack = vec![(root, 0, false)];
-        let mut pending_children: Vec<OwnedValue> = Vec::new();
+        let mut pending_children: Vec<Value<'static>> = Vec::new();
 
         while let Some((index, depth, all_childs_processed)) = stack.pop() {
             let (item, child_idxs) = &self.flattened_menu[index];
@@ -414,11 +414,7 @@ impl<T: Tray> Service<T> {
                     return Some(layout);
                 }
 
-                pending_children.push(
-                    layout
-                        .try_into()
-                        .expect("Layout should convert to OwnedValue"),
-                );
+                pending_children.push(layout.into());
             } else {
                 stack.push((index, depth, true));
 
@@ -1357,6 +1353,59 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn build_layout_handles_very_deep_menu_without_stack_overflow() {
+        const DEPTH: usize = 8192;
+
+        #[derive(Clone, Default)]
+        struct DeepTray;
+
+        impl Tray for DeepTray {
+            fn id(&self) -> String {
+                "deep-tray".into()
+            }
+
+            fn menu(&self) -> Vec<crate::MenuItem<Self>> {
+                // the deepest item
+                let mut item: crate::MenuItem<Self> = StandardItem {
+                    label: DEPTH.to_string(),
+                    ..Default::default()
+                }
+                .into();
+
+                for depth in (0..DEPTH).rev() {
+                    item = crate::menu::SubMenu {
+                        label: depth.to_string(),
+                        submenu: vec![item],
+                        ..Default::default()
+                    }
+                    .into();
+                }
+
+                vec![item]
+            }
+        }
+
+        let service = Service::new(DeepTray);
+        let service = blocking_lock_service(&service);
+
+        let mut layout = service
+            .build_layout(0, None, vec!["label".into()])
+            .expect("root layout should exist");
+
+        // the deepest item lable is DEPTH, so we use ..=
+        for depth in 0..=DEPTH {
+            assert_eq!(layout.children.len(), 1);
+            layout = layout
+                .children
+                .remove(0)
+                .try_into()
+                .expect("children should be Layout");
+            let label = depth.to_string();
+            assert_eq!(layout.properties, properties! { "label" => label });
+        }
     }
 
     #[test]

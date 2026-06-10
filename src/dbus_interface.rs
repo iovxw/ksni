@@ -227,16 +227,19 @@ impl<T: Tray> StatusNotifierItem<T> {
     pub async fn new_status(ctxt: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
 }
 
-#[derive(Debug, Default, Type, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Type, Serialize, PartialEq)]
 pub struct Layout {
     pub id: i32,
     pub properties: HashMap<Cow<'static, str>, OwnedValue>,
-    pub children: Vec<OwnedValue>,
+    // The construction of OwnedValue is recursive
+    // which may overflow menu with very depth submenu
+    // so we use Value<'static> here
+    pub children: Vec<Value<'static>>,
 }
 
-impl<'a> TryFrom<Value<'a>> for Layout {
+impl TryFrom<Value<'static>> for Layout {
     type Error = zvariant::Error;
-    fn try_from(value: Value<'a>) -> zvariant::Result<Self> {
+    fn try_from(value: Value<'static>) -> zvariant::Result<Self> {
         let mut fields = zvariant::Structure::try_from(value)?.into_fields();
         Ok(Self {
             id: fields.remove(0).downcast()?,
@@ -253,7 +256,7 @@ impl TryFrom<OwnedValue> for Layout {
     }
 }
 
-impl From<Layout> for OwnedValue {
+impl<'a> From<Layout> for Value<'a> {
     fn from(s: Layout) -> Self {
         Value::from(
             zvariant::StructureBuilder::new()
@@ -263,14 +266,14 @@ impl From<Layout> for OwnedValue {
                 .build()
                 .unwrap(),
         )
-        .try_into_owned()
-        .expect("Layout should not contains any fd")
     }
 }
 
-impl<'a> From<Layout> for Value<'a> {
+impl From<Layout> for OwnedValue {
     fn from(s: Layout) -> Self {
-        OwnedValue::from(s).into()
+        Value::from(s)
+            .try_into_owned()
+            .expect("Layout should not contains any fd")
     }
 }
 

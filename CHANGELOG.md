@@ -3,6 +3,7 @@
 ## Added
 - Mocked protocol test suites for StatusNotifierWatcher, StatusNotifierItem, and DBusMenu across tokio, async-io, and blocking runtimes
 - Lifetime management for the `async-io` executor to ensure no background thread when all trays stopped
+- Allow SubMenu to be nested to an unlimited depth
 
 ## Changed
 - Report the unsupported `tokio + async-io` feature combination with an explicit compile-time error

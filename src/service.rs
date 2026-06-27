@@ -348,17 +348,26 @@ impl<T: Tray> Service<T> {
 
     // Return None if item not exists
     fn id2index(&self, id: i32) -> Option<usize> {
+        if id < 0 {
+            return None;
+        }
         let number_of_items = self.flattened_menu.len();
+        assert!(
+            !self.flattened_menu.is_empty(),
+            "flattened_menu should always have a root item"
+        );
         let offset = self.item_id_offset;
-        if id == 0 && number_of_items > 0 {
+        if id == 0 {
             // ID of the root item is always 0
             return Some(0);
         } else if id <= offset {
-            // == illegal id, bug in index2id or dbus peer
-            //  < expired id
+            // when ==: illegal id, bug in index2id or dbus peer
+            //       <: expired id
             return None;
         }
-        let index: usize = (id - offset).try_into().expect("unreachable!");
+        let index: usize = (id - offset)
+            .try_into()
+            .expect("id should have been checked");
         if index < number_of_items {
             Some(index)
         } else {
@@ -703,6 +712,63 @@ mod tests {
         }
 
         None
+    }
+
+    #[test]
+    fn test_index2id_mapping() {
+        let service = Service::new(TestTray);
+        let mut service_guard = blocking_lock_service(&service);
+
+        assert_eq!(service_guard.index2id(0), 0);
+        assert_eq!(service_guard.index2id(1), 1);
+        assert_eq!(service_guard.index2id(5), 5);
+
+        let initial_len = service_guard.flattened_menu.len();
+        service_guard.item_id_offset = initial_len as i32;
+
+        assert_eq!(service_guard.index2id(0), 0);
+        assert_eq!(service_guard.index2id(1), 1 + service_guard.item_id_offset);
+        assert_eq!(service_guard.index2id(3), 3 + service_guard.item_id_offset);
+    }
+
+    #[test]
+    fn test_id2index_mapping() {
+        let service = Service::new(TestTray);
+        let mut service_guard = blocking_lock_service(&service);
+
+        assert_eq!(service_guard.id2index(0), Some(0));
+        assert_eq!(service_guard.id2index(1), Some(1));
+        assert_eq!(service_guard.id2index(4), Some(4));
+
+        let initial_len = service_guard.flattened_menu.len();
+        service_guard.item_id_offset = initial_len as i32;
+
+        assert_eq!(service_guard.id2index(0), Some(0));
+        assert_eq!(service_guard.id2index(1 + service_guard.item_id_offset), Some(1));
+        assert_eq!(service_guard.id2index(4 + service_guard.item_id_offset), Some(4));
+    }
+
+    #[test]
+    fn test_id2index_edge_cases_and_expired_ids() {
+        let service = Service::new(TestTray);
+        let mut service_guard = blocking_lock_service(&service);
+        let len = service_guard.flattened_menu.len();
+
+        // invalid ids
+        assert_eq!(service_guard.id2index(-1), None);
+        assert_eq!(service_guard.id2index(-999), None);
+        assert_eq!(service_guard.id2index(len as i32), None);
+        assert_eq!(service_guard.id2index(len as i32 + 99), None);
+
+        service_guard.item_id_offset = len as i32;
+        // expired ids
+        assert_eq!(service_guard.id2index(1), None);
+        assert_eq!(service_guard.id2index(4), None);
+        assert_eq!(service_guard.id2index(len as i32), None);
+
+        let max_valid_id = (len as i32 - 1) + service_guard.item_id_offset;
+        assert_eq!(service_guard.id2index(max_valid_id), Some(len - 1));
+        assert_eq!(service_guard.id2index(max_valid_id + 1), None);
     }
 
     #[test]

@@ -1,0 +1,6 @@
+[submodule "reference/gnome-shell-extension-appindicator"]
+	path = reference/gnome-shell-extension-appindicator
+	url = https://github.com/ubuntu/gnome-shell-extension-appindicator.git
+[submodule "reference/plasma-workspace"]
+	path = reference/plasma-workspace
+	url = https://github.com/KDE/plasma-workspace.git

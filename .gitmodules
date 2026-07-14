@@ -4,3 +4,6 @@
 [submodule "reference/plasma-workspace"]
 	path = reference/plasma-workspace
 	url = https://github.com/KDE/plasma-workspace.git
+[submodule "reference/libdbusmenu"]
+	path = reference/libdbusmenu
+	url = https://git.launchpad.net/libdbusmenu

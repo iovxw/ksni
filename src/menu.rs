@@ -200,6 +200,8 @@ pub struct SubMenu<T> {
     /// How the menuitem feels the information it's displaying to the
     /// user should be presented.
     pub disposition: Disposition,
+    // /// Callback invoked when the submenu is about to show
+    // pub about_to_show: Box<dyn Fn(&mut T) + Send>,
     /// List of submenu items
     pub submenu: Vec<MenuItem<T>>,
 }

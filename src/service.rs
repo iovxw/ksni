@@ -287,7 +287,7 @@ impl<T: Tray> Service<T> {
         Ok(())
     }
 
-    async fn update_menu(&mut self, conn: &Connection) -> zbus::Result<()> {
+    async fn update_menu(&mut self, conn: &Connection, emit_signals: bool) -> zbus::Result<bool> {
         let new_menu = menu::menu_flatten(self.tray.menu());
         let mut all_updated_props = Vec::new();
         let mut all_removed_props = Vec::new();
@@ -317,6 +317,8 @@ impl<T: Tray> Service<T> {
             }
         }
 
+        let prop_updated = !all_updated_props.is_empty() || !all_removed_props.is_empty();
+
         let menu_obj = conn
             .object_server()
             .interface::<_, DbusMenu<T>>(MENU_PATH)
@@ -326,24 +328,29 @@ impl<T: Tray> Service<T> {
             // which is required to avoid unexpected behaviors on some system tray
             self.revision += 1;
             self.item_id_offset += self.flattened_menu.len() as i32;
-            DbusMenu::<T>::layout_updated(menu_obj.signal_emitter(), self.revision, 0).await?;
-        } else if !all_updated_props.is_empty() || !all_removed_props.is_empty() {
-            DbusMenu::<T>::items_properties_updated(
-                menu_obj.signal_emitter(),
-                all_updated_props,
-                all_removed_props,
-            )
-            .await?;
+        }
+        if emit_signals {
+            if layout_updated {
+                DbusMenu::<T>::layout_updated(menu_obj.signal_emitter(), self.revision, 0).await?;
+            } else if prop_updated {
+                DbusMenu::<T>::items_properties_updated(
+                    menu_obj.signal_emitter(),
+                    all_updated_props,
+                    all_removed_props,
+                )
+                .await?;
+            }
         }
         // Always update menu_cache since `on_clicked` can be updated
         // and we can not detect that
         self.flattened_menu = new_menu;
-        Ok(())
+        Ok(layout_updated || prop_updated)
     }
 
     async fn update(&mut self, conn: &Connection) -> zbus::Result<()> {
         self.update_properties(&conn).await?;
-        self.update_menu(&conn).await
+        self.update_menu(&conn, true).await?;
+        Ok(())
     }
 
     // Return None if item not exists
@@ -495,6 +502,30 @@ impl<T: Tray> Service<T> {
             _ => (),
         }
         Ok(())
+    }
+
+    /// Return `None` if item not found
+    pub async fn menu_about_to_show(
+        &mut self,
+        conn: &Connection,
+        id: i32,
+    ) -> zbus::fdo::Result<Option<bool>> {
+        if id == 0 {
+            self.tray.menu_about_to_show();
+            self.update_properties(conn).await?;
+            Ok(Some(self.update_menu(conn, false).await?))
+        } else {
+            // TODO: support submenu about_to_show
+            // PLAN: For `about_to_show_group`, perform a single `update_menu`. Then run a diff;
+            // return `true` only if the submenu corresponding to the `id` has been modified.
+            // If changes occur outside the submenu, use a signal.
+            // FIXME: What should we do if the layout changed?
+            // The challenge with layout changes is that we refresh all `id`s after detecting a
+            // layout change (for some host impl that can't handle layout update), but during
+            // `about_to_show`, the user menu is open.
+            // We need a new algorithm that compatible with all host implementations
+            Ok(self.id2index(id).map(|_| false))
+        }
     }
 
     pub async fn call_activate(&mut self, conn: &Connection, x: i32, y: i32) {
@@ -744,8 +775,14 @@ mod tests {
         service_guard.item_id_offset = initial_len as i32;
 
         assert_eq!(service_guard.id2index(0), Some(0));
-        assert_eq!(service_guard.id2index(1 + service_guard.item_id_offset), Some(1));
-        assert_eq!(service_guard.id2index(4 + service_guard.item_id_offset), Some(4));
+        assert_eq!(
+            service_guard.id2index(1 + service_guard.item_id_offset),
+            Some(1)
+        );
+        assert_eq!(
+            service_guard.id2index(4 + service_guard.item_id_offset),
+            Some(4)
+        );
     }
 
     #[test]

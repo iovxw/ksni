@@ -196,6 +196,15 @@ pub trait Tray: Sized + Send + 'static {
         Default::default()
     }
 
+    /// The root menu is about to show
+    ///
+    /// This method is semantically called before the root menu is shown, although the host may
+    /// call it after or while the menu is being displayed.
+    ///
+    /// The root menu is the first level of the [`Self::menu`], not any [`menu::SubMenu`].
+    // TODO: next version /// Use [`menu::SubMenu::about_to_show`] for submenus.
+    fn menu_about_to_show(&mut self) {}
+
     /// The `org.kde.StatusNotifierWatcher` is back to online
     ///
     /// This method will only be called after [`watcher_offline`]

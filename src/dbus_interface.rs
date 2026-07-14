@@ -414,29 +414,46 @@ impl<T: Tray> DbusMenu<T> {
         }
     }
 
-    async fn about_to_show(&self, id: i32) -> zbus::fdo::Result<bool> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
+    async fn about_to_show(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        id: i32,
+    ) -> zbus::fdo::Result<bool> {
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
         if service.get_menu_item(id, &[]).is_none() {
             Err(zbus::fdo::Error::InvalidArgs("id not found".into()))
         } else {
-            Ok(false)
+            service
+                .menu_about_to_show(conn, id)
+                .await?
+                .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".into()))
         }
     }
 
-    async fn about_to_show_group(&self, ids: Vec<i32>) -> zbus::fdo::Result<(Vec<i32>, Vec<i32>)> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        let id_errors = ids
-            .iter()
-            .copied()
-            .filter(|&id| service.get_menu_item(id, &[]).is_none())
-            .collect::<Vec<_>>();
+    async fn about_to_show_group(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        ids: Vec<i32>,
+    ) -> zbus::fdo::Result<(Vec<i32>, Vec<i32>)> {
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        let mut error_ids = Vec::new();
+        let mut changed = Vec::with_capacity(ids.len());
 
-        if !ids.is_empty() && id_errors.len() == ids.len() {
+        for &id in &ids {
+            // TODO: only update one time, see `menu_about_to_show`
+            match service.menu_about_to_show(conn, id).await? {
+                Some(true) => changed.push(id),
+                Some(false) => (),
+                None => error_ids.push(id),
+            }
+        }
+
+        if !ids.is_empty() && error_ids.len() == ids.len() {
             Err(zbus::fdo::Error::InvalidArgs(
                 "None of the id in the group can be found".into(),
             ))
         } else {
-            Ok((Vec::new(), id_errors))
+            Ok((changed, error_ids))
         }
     }
 

@@ -1784,4 +1784,45 @@ mod tests {
 
         assert!(matches!(err, zbus::fdo::Error::InvalidArgs(_)));
     }
+
+    /// Calling `menu_about_to_show` with a valid non-root item ID returns
+    /// `Some(false)` because submenu `about_to_show` is not yet supported
+    /// (returns false unconditionally).
+    #[cfg_attr(feature = "tokio", tokio::test)]
+    #[cfg_attr(feature = "async-io", apply(test!))]
+    async fn menu_about_to_show_valid_non_root_returns_false() {
+        let service = Service::new(TestTray);
+        let conn = zbus::Connection::session().await.unwrap();
+        let mut service = service.lock().await;
+
+        // id=1 is the first non-root submenu ("root-submenu")
+        let result = service
+            .menu_about_to_show(&conn, 1)
+            .await
+            .expect("valid id should not error");
+        assert_eq!(result, Some(false));
+    }
+
+    /// Calling `menu_about_to_show` with an unknown or negative ID returns
+    /// `None`, signalling that the item does not exist.
+    #[cfg_attr(feature = "tokio", tokio::test)]
+    #[cfg_attr(feature = "async-io", apply(test!))]
+    async fn menu_about_to_show_invalid_id_returns_none() {
+        let service = Service::new(TestTray);
+        let conn = zbus::Connection::session().await.unwrap();
+        let mut service = service.lock().await;
+
+        let result = service
+            .menu_about_to_show(&conn, 999)
+            .await
+            .expect("invalid id should not error");
+        assert_eq!(result, None);
+
+        // Negative ids are also invalid
+        let result = service
+            .menu_about_to_show(&conn, -1)
+            .await
+            .expect("negative id should not error");
+        assert_eq!(result, None);
+    }
 }

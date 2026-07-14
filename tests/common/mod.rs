@@ -148,6 +148,7 @@ pub struct TestTray<const MENU_ON_ACTIVATE: bool> {
     pub radio_selected: usize,
     pub include_extra_item: bool,
     pub include_separator: bool,
+    pub menu_about_to_show_extra: bool,
     pub continue_on_offline: bool,
     pub events: CallbackProbe,
 }
@@ -191,6 +192,7 @@ impl<const MENU_ON_ACTIVATE: bool> TestTray<MENU_ON_ACTIVATE> {
                 radio_selected: 1,
                 include_extra_item: false,
                 include_separator: false,
+                menu_about_to_show_extra: false,
                 continue_on_offline: true,
                 events: events.clone(),
             },
@@ -377,6 +379,12 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
         items
     }
 
+    fn menu_about_to_show(&mut self) {
+        if self.menu_about_to_show_extra {
+            self.include_extra_item = !self.include_extra_item;
+        }
+    }
+
     fn watcher_online(&self) {
         self.events.lock().unwrap().online_count += 1;
     }
@@ -496,6 +504,19 @@ impl SignalWaiter {
             .recv_timeout(timeout)
             .unwrap_or_else(|_| panic!("timed out waiting for {}", self.context))
             .unwrap_or_else(|| panic!("signal stream ended for {}", self.context))
+    }
+
+    /// Assert that **no** signal arrives within `timeout`.
+    ///
+    /// Unlike [`wait`](Self::wait), this does **not** panic on timeout – a
+    /// timeout means the signal was correctly *not* emitted. It panics only if
+    /// a signal actually arrives.
+    pub fn expect_no_signal(self, timeout: Duration) {
+        match self.rx.recv_timeout(timeout) {
+            Ok(Some(msg)) => panic!("unexpected signal {}: {:?}", self.context, msg.body()),
+            Ok(None) => (),
+            Err(_) => (),
+        }
     }
 }
 
@@ -935,4 +956,16 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
             .expect_err("all-invalid AboutToShowGroup ids must fail")
     )
     .contains("InvalidArgs"));
+
+    // Root AboutToShow returns false when the tray does not modify its menu
+    let about_to_show_root: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+    assert!(!about_to_show_root);
+
+    // AboutToShowGroup with root + invalid id: root returns Some(false) → unchanged,
+    // invalid returns None → error, so changed is empty and id_errors contains the bad id
+    let (updates_needed, id_errors): (Vec<i32>, Vec<i32>) = proxy
+        .call("AboutToShowGroup", &(vec![0_i32, 999_i32],))
+        .unwrap();
+    assert!(updates_needed.is_empty());
+    assert_eq!(id_errors, vec![999]);
 }

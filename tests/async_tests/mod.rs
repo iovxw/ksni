@@ -511,6 +511,95 @@ pub async fn dbusmenu_protocol() {
     close_watcher(watcher).await;
 }
 
+/// Async variant of [`crate::blocking::menu_about_to_show_dynamic`].
+///
+/// When `Tray::menu_about_to_show` modifies the menu, `AboutToShow(0)` must
+/// return `true` and the change must be reflected in `GetLayout`.
+///
+/// `AboutToShowGroup` must report the root ID in `updatesNeeded`.
+pub async fn menu_about_to_show_dynamic() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (mut tray, _events) = TestTray::<false>::new("runtime-protocol-tray");
+    tray.menu_about_to_show_extra = true;
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT).await;
+
+    let sn_for_blocking = service_name.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        let proxy = menu_proxy(&connection, &sn_for_blocking);
+
+        // First call: menu changes (include_extra_item toggles from false to true)
+        let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+        assert!(needs_update, "AboutToShow(0) should return true when menu is modified");
+
+        // Verify Extra item is now in the layout
+        let (_, layout): (u32, LayoutTuple) = proxy
+            .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
+            .unwrap();
+        let layout = decode_layout(layout);
+        assert!(find_layout_by_label(&layout, "Extra").is_some(), "Extra item should appear after AboutToShow");
+
+        // Second call: menu changes back (include_extra_item toggles from true to false)
+        let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+        assert!(needs_update, "AboutToShow(0) should return true again when menu is modified back");
+
+        // AboutToShowGroup with root - should detect change
+        // Reset state first by calling once more so include_extra_item goes false→true
+        let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+        // Now call AboutToShowGroup
+        let (updates_needed, id_errors): (Vec<i32>, Vec<i32>) = proxy
+            .call("AboutToShowGroup", &(vec![0_i32],))
+            .unwrap();
+        assert_eq!(updates_needed, vec![0], "root should be in updatesNeeded when menu changes");
+        assert!(id_errors.is_empty());
+    })
+    .await;
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
+/// Async variant of [`crate::blocking::about_to_show_signal_silence`].
+///
+/// `AboutToShow(0) -> true` must not emit a `LayoutUpdated` D-Bus signal
+pub async fn about_to_show_signal_silence() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (mut tray, _events) = TestTray::<false>::new("runtime-protocol-tray");
+    tray.menu_about_to_show_extra = true;
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT).await;
+
+    let sn_for_blocking = service_name.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        let proxy = menu_proxy(&connection, &sn_for_blocking);
+
+        // Subscribe to LayoutUpdated before calling AboutToShow
+        let waiter = spawn_signal_waiter(
+            &sn_for_blocking,
+            MENU_PATH,
+            MENU_INTERFACE,
+            "LayoutUpdated",
+        );
+
+        // Call AboutToShow on root menu (id=0) — should return true but NOT emit LayoutUpdated
+        let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+        assert!(needs_update, "AboutToShow(0) should return true when menu is modified");
+
+        // Verify no LayoutUpdated signal arrives within 500ms
+        waiter.expect_no_signal(Duration::from_millis(500));
+    })
+    .await;
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
 pub async fn non_standard_compatibility() {
     use ksni::TrayMethods as _;
 
@@ -902,6 +991,16 @@ macro_rules! async_protocol_tests {
         #[$test_attr]
         async fn watcher_reregistration_failure() {
             async_tests::watcher_reregistration_failure().await;
+        }
+
+        #[$test_attr]
+        async fn menu_about_to_show_dynamic() {
+            async_tests::menu_about_to_show_dynamic().await;
+        }
+
+        #[$test_attr]
+        async fn about_to_show_signal_silence() {
+            async_tests::about_to_show_signal_silence().await;
         }
     };
 }

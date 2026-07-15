@@ -11,6 +11,7 @@ repository = "https://github.com/iovxw/ksni"
 keywords = ["systray", "linux", "gui"]
 categories = ["api-bindings"]
 license = "Unlicense"
+exclude = ["reference/", "spec/"]
 
 [features]
 default = ["tokio"]

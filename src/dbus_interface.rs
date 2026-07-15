@@ -81,7 +81,7 @@ impl<T: Tray> StatusNotifierItem<T> {
             // KDE Plasma < 6.4 also relies on this behavior
             // https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L44-L57
             // KDE Plasma >= 6.4 won't call activate if ItemIsMenu is true, so we can keep this workaround
-            // https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
+            // https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
             Err(zbus::fdo::Error::UnknownMethod("ItemIsMenu".into()))
         } else {
             let mut service = self.0.lock().await; // do NOT use any self methods after this
@@ -420,6 +420,7 @@ impl<T: Tray> DbusMenu<T> {
         id: i32,
     ) -> zbus::fdo::Result<bool> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
+        // TODO: run the hook in a separate task
         if service.run_about2show_hook(conn, id).await? {
             // Always return false
             // libdubusmenu does not respect the return value
@@ -440,7 +441,10 @@ impl<T: Tray> DbusMenu<T> {
         let mut not_found_ids = Vec::new();
 
         for &id in &ids {
-            if !service.run_about2show_hook(conn, id).await? {
+            if id == 0 {
+                service.run_about2show_hook(conn, id).await?;
+            } else if service.get_menu_item(id, &[]).is_none() {
+                // Only checks id exists, don't trigger update
                 not_found_ids.push(id);
             }
         }

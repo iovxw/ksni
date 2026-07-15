@@ -1783,43 +1783,43 @@ mod tests {
         assert!(matches!(err, zbus::fdo::Error::InvalidArgs(_)));
     }
 
-    /// Calling `menu_about_to_show` with a valid non-root submenu ID returns
-    /// `Some(false)`
+    /// Calling `run_about2show_hook` with a valid non-root submenu ID returns
+    /// `true` (the submenu exists).
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
-    async fn menu_about_to_show_valid_non_root_returns_false() {
+    async fn run_about2show_hook_valid_non_root_returns_true() {
         let service = Service::new(TestTray);
         let conn = zbus::Connection::session().await.unwrap();
         let mut service = service.lock().await;
 
         // id=1 is the first non-root submenu ("root-submenu")
         let result = service
-            .menu_about_to_show(&conn, 1)
+            .run_about2show_hook(&conn, 1)
             .await
             .expect("valid id should not error");
-        assert_eq!(result, Some(false));
+        assert!(result, "valid submenu id should return true");
     }
 
-    /// Calling `menu_about_to_show` with an unknown or negative ID returns
-    /// `None`
+    /// Calling `run_about2show_hook` with an unknown or negative ID returns
+    /// `false` (item not found).
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
-    async fn menu_about_to_show_invalid_id_returns_none() {
+    async fn run_about2show_hook_invalid_id_returns_false() {
         let service = Service::new(TestTray);
         let conn = zbus::Connection::session().await.unwrap();
         let mut service = service.lock().await;
 
         let result = service
-            .menu_about_to_show(&conn, 999)
+            .run_about2show_hook(&conn, 999)
             .await
             .expect("invalid id should not error");
-        assert_eq!(result, None);
+        assert!(!result, "unknown id should return false");
 
         // Negative ids are also invalid
         let result = service
-            .menu_about_to_show(&conn, -1)
+            .run_about2show_hook(&conn, -1)
             .await
             .expect("negative id should not error");
-        assert_eq!(result, None);
+        assert!(!result, "negative id should return false");
     }
 }

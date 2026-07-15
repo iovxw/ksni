@@ -380,9 +380,10 @@ fn dbusmenu_protocol() {
 }
 
 /// When `Tray::menu_about_to_show` modifies the menu, `AboutToShow(0)` must
-/// return `true` and the change must be reflected in `GetLayout`.
+/// return `false` (Qt workaround: libdbusmenu does not respect the return
+/// value; signals are used instead). The change must be reflected in `GetLayout`.
 ///
-/// `AboutToShowGroup` must report the root ID in `updatesNeeded`.
+/// `AboutToShowGroup` must report an empty `updatesNeeded` list.
 #[test]
 fn menu_about_to_show_dynamic() {
     use ksni::blocking::TrayMethods as _;
@@ -397,7 +398,7 @@ fn menu_about_to_show_dynamic() {
 
     // First call: menu changes (include_extra_item toggles from false to true)
     let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
-    assert!(needs_update, "AboutToShow(0) should return true when menu is modified");
+    assert!(!needs_update, "AboutToShow(0) should return false (Qt workaround)");
 
     // Verify Extra item is now in the layout
     let (_, layout): (u32, LayoutTuple) = proxy
@@ -408,49 +409,17 @@ fn menu_about_to_show_dynamic() {
 
     // Second call: menu changes back (include_extra_item toggles from true to false)
     let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
-    assert!(needs_update, "AboutToShow(0) should return true again when menu is modified back");
+    assert!(!needs_update, "AboutToShow(0) should return false (Qt workaround)");
 
-    // AboutToShowGroup with root - should detect change
+    // AboutToShowGroup with root - always returns empty updatesNeeded
     // Reset state first by calling once more so include_extra_item goes false→true
     let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
     // Now call AboutToShowGroup
     let (updates_needed, id_errors): (Vec<i32>, Vec<i32>) = proxy
         .call("AboutToShowGroup", &(vec![0_i32],))
         .unwrap();
-    assert_eq!(updates_needed, vec![0], "root should be in updatesNeeded when menu changes");
+    assert!(updates_needed.is_empty(), "updatesNeeded should be empty (Qt workaround)");
     assert!(id_errors.is_empty());
-
-    handle.shutdown().wait();
-    watcher.close();
-}
-
-/// `AboutToShow(0) -> true` must not emit a `LayoutUpdated` D-Bus signal
-#[test]
-fn about_to_show_signal_silence() {
-    use ksni::blocking::TrayMethods as _;
-
-    let watcher = WatcherHandle::start(true).unwrap();
-    let (mut tray, _events) = TestTray::<false>::new("runtime-protocol-tray");
-    tray.menu_about_to_show_extra = true;
-    let handle = tray.spawn().expect("tray should start");
-    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
-    let connection = session_connection();
-    let proxy = menu_proxy(&connection, &service_name);
-
-    // Subscribe to LayoutUpdated before calling AboutToShow
-    let waiter = spawn_signal_waiter(
-        &service_name,
-        MENU_PATH,
-        MENU_INTERFACE,
-        "LayoutUpdated",
-    );
-
-    // Call AboutToShow on root menu (id=0) — should return true but NOT emit LayoutUpdated
-    let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
-    assert!(needs_update, "AboutToShow(0) should return true when menu is modified");
-
-    // Verify no LayoutUpdated signal arrives within 500ms
-    waiter.expect_no_signal(Duration::from_millis(500));
 
     handle.shutdown().wait();
     watcher.close();

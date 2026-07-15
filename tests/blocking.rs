@@ -398,27 +398,38 @@ fn menu_about_to_show_dynamic() {
 
     // First call: menu changes (include_extra_item toggles from false to true)
     let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
-    assert!(!needs_update, "AboutToShow(0) should return false (Qt workaround)");
+    assert!(
+        !needs_update,
+        "AboutToShow(0) should return false (Qt workaround)"
+    );
 
     // Verify Extra item is now in the layout
     let (_, layout): (u32, LayoutTuple) = proxy
         .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
         .unwrap();
     let layout = decode_layout(layout);
-    assert!(find_layout_by_label(&layout, "Extra").is_some(), "Extra item should appear after AboutToShow");
+    assert!(
+        find_layout_by_label(&layout, "Extra").is_some(),
+        "Extra item should appear after AboutToShow"
+    );
 
     // Second call: menu changes back (include_extra_item toggles from true to false)
     let needs_update: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
-    assert!(!needs_update, "AboutToShow(0) should return false (Qt workaround)");
+    assert!(
+        !needs_update,
+        "AboutToShow(0) should return false (Qt workaround)"
+    );
 
     // AboutToShowGroup with root - always returns empty updatesNeeded
     // Reset state first by calling once more so include_extra_item goes false→true
     let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
     // Now call AboutToShowGroup
-    let (updates_needed, id_errors): (Vec<i32>, Vec<i32>) = proxy
-        .call("AboutToShowGroup", &(vec![0_i32],))
-        .unwrap();
-    assert!(updates_needed.is_empty(), "updatesNeeded should be empty (Qt workaround)");
+    let (updates_needed, id_errors): (Vec<i32>, Vec<i32>) =
+        proxy.call("AboutToShowGroup", &(vec![0_i32],)).unwrap();
+    assert!(
+        updates_needed.is_empty(),
+        "updatesNeeded should be empty (Qt workaround)"
+    );
     assert!(id_errors.is_empty());
 
     handle.shutdown().wait();

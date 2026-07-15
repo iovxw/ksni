@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
@@ -511,9 +512,17 @@ impl<T: Tray> Service<T> {
         id: i32,
     ) -> zbus::fdo::Result<bool> {
         if id == 0 {
-            self.tray.menu_about_to_show();
-            self.update_properties(conn).await?;
-            self.update_menu(conn, true).await?;
+            let about_to_show_impled = crate::NO_ABOUT_TO_SHOW
+                .scope(Cell::new(false), async {
+                    self.tray.menu_about_to_show();
+                    !crate::NO_ABOUT_TO_SHOW.get().get()
+                })
+                .await;
+            // don't update if the menu_about_to_show is not implemented, keep old behavior
+            if about_to_show_impled {
+                self.update_properties(conn).await?;
+                self.update_menu(conn, true).await?;
+            }
             Ok(true)
         } else {
             // TODO: support submenu about_to_show

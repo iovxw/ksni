@@ -722,3 +722,87 @@ fn watcher_reregistration_failure() {
     handle.shutdown().wait();
     watcher.close();
 }
+
+/// Verify that when `menu_about_to_show` is overridden, `AboutToShow` triggers
+/// `update_menu` (and thus calls `menu()`).
+#[test]
+fn about_to_show_implemented_counter() {
+    use ksni::blocking::TrayMethods as _;
+    use std::cell::Cell;
+
+    struct Tray(Cell<usize>);
+
+    impl ksni::Tray for Tray {
+        fn id(&self) -> String {
+            "about-to-show-counter".into()
+        }
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            self.0.set(self.0.get() + 1);
+            vec![]
+        }
+        fn menu_about_to_show(&mut self) {
+            // Override: do nothing, so NO_ABOUT_TO_SHOW is false
+        }
+    }
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let tray = Tray(Cell::new(0));
+    let handle = tray.spawn().expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    let connection = session_connection();
+    let proxy = menu_proxy(&connection, &service_name);
+
+    // menu() was called once during initialization
+    assert_eq!(handle.update(|t| t.0.get()).unwrap(), 1);
+
+    // Send AboutToShow — triggers update_menu since about_to_show was overridden
+    let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+
+    // Counter increased by 1 more than the not-implemented case:
+    // init(1) + first handle.update side-effect(→2) + AboutToShow triggers update_menu(→3)
+    assert_eq!(handle.update(|t| t.0.get()).unwrap(), 3);
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
+/// Verify that when `menu_about_to_show` is NOT overridden (default impl),
+/// `AboutToShow` does NOT trigger `update_menu`.
+#[test]
+fn about_to_show_not_implemented_counter() {
+    use ksni::blocking::TrayMethods as _;
+    use std::cell::Cell;
+
+    struct Tray(Cell<usize>);
+
+    impl ksni::Tray for Tray {
+        fn id(&self) -> String {
+            "about-to-show-counter".into()
+        }
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            self.0.set(self.0.get() + 1);
+            vec![]
+        }
+        // menu_about_to_show not overridden — uses default impl which sets NO_ABOUT_TO_SHOW
+    }
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let tray = Tray(Cell::new(0));
+    let handle = tray.spawn().expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    let connection = session_connection();
+    let proxy = menu_proxy(&connection, &service_name);
+
+    // menu() was called once during initialization
+    assert_eq!(handle.update(|t| t.0.get()).unwrap(), 1);
+
+    // Send AboutToShow — update_menu is skipped because default impl was used
+    let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+
+    // Counter stays the same as before AboutToShow:
+    // init(1) + first handle.update side-effect(→2) + AboutToShow does NOT trigger update_menu(→2)
+    assert_eq!(handle.update(|t| t.0.get()).unwrap(), 2);
+
+    handle.shutdown().wait();
+    watcher.close();
+}

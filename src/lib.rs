@@ -24,6 +24,7 @@
 //! [Tokio]: https://tokio.rs
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+use std::cell::Cell;
 use std::sync::{Arc, Weak};
 
 #[cfg(feature = "blocking")]
@@ -39,7 +40,11 @@ mod tray;
 pub use menu::{MenuItem, TextDirection};
 pub use tray::{Category, Icon, Orientation, Status, ToolTip};
 
-use crate::compat::{mpsc, oneshot, Mutex};
+use crate::compat::{mpsc, oneshot, task_local, Mutex};
+
+task_local! {
+    pub(crate) static NO_ABOUT_TO_SHOW: Cell<bool>;
+}
 
 /// A system tray, implement this to create your tray
 pub trait Tray: Sized + Send + 'static {
@@ -203,7 +208,9 @@ pub trait Tray: Sized + Send + 'static {
     ///
     /// The root menu is the first level of the [`Self::menu`], not any [`menu::SubMenu`].
     // TODO: next version /// Use [`menu::SubMenu::about_to_show`] for submenus.
-    fn menu_about_to_show(&mut self) {}
+    fn menu_about_to_show(&mut self) {
+        let _ignore_error = NO_ABOUT_TO_SHOW.try_with(|b| b.set(true));
+    }
 
     /// The `org.kde.StatusNotifierWatcher` is back to online
     ///

@@ -874,6 +874,90 @@ pub async fn update_after_shutdown_returns_none() {
     close_watcher(watcher).await;
 }
 
+/// Async variant of [`crate::blocking::about_to_show_implemented_counter`].
+pub async fn about_to_show_implemented_counter() {
+    use ksni::TrayMethods as _;
+    use std::cell::Cell;
+
+    struct Tray(Cell<usize>);
+
+    impl ksni::Tray for Tray {
+        fn id(&self) -> String {
+            "about-to-show-counter".into()
+        }
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            self.0.set(self.0.get() + 1);
+            vec![]
+        }
+        fn menu_about_to_show(&mut self) {
+            // Override: do nothing, so NO_ABOUT_TO_SHOW is false
+        }
+    }
+
+    let watcher = start_watcher(true, None).await;
+    let tray = Tray(Cell::new(0));
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT).await;
+
+    assert_eq!(handle.update(|t| t.0.get()).await.unwrap(), 1);
+
+    let sn = service_name.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        let proxy = menu_proxy(&connection, &sn);
+        let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+    })
+    .await;
+
+    // Counter increased by 1 more than the not-implemented case:
+    // init(1) + first handle.update side-effect(→2) + AboutToShow triggers update_menu(→3)
+    assert_eq!(handle.update(|t| t.0.get()).await.unwrap(), 3);
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
+/// Async variant of [`crate::blocking::about_to_show_not_implemented_counter`].
+pub async fn about_to_show_not_implemented_counter() {
+    use ksni::TrayMethods as _;
+    use std::cell::Cell;
+
+    struct Tray(Cell<usize>);
+
+    impl ksni::Tray for Tray {
+        fn id(&self) -> String {
+            "about-to-show-counter".into()
+        }
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            self.0.set(self.0.get() + 1);
+            vec![]
+        }
+        // menu_about_to_show not overridden — uses default impl which sets NO_ABOUT_TO_SHOW
+    }
+
+    let watcher = start_watcher(true, None).await;
+    let tray = Tray(Cell::new(0));
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT).await;
+
+    assert_eq!(handle.update(|t| t.0.get()).await.unwrap(), 1);
+
+    let sn = service_name.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        let proxy = menu_proxy(&connection, &sn);
+        let _: bool = proxy.call("AboutToShow", &(0_i32,)).unwrap();
+    })
+    .await;
+
+    // Counter stays the same as before AboutToShow:
+    // init(1) + first handle.update side-effect(→2) + AboutToShow does NOT trigger update_menu(→2)
+    assert_eq!(handle.update(|t| t.0.get()).await.unwrap(), 2);
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
 macro_rules! async_protocol_tests {
     ($test_attr:meta) => {
         #[$test_attr]
@@ -969,6 +1053,16 @@ macro_rules! async_protocol_tests {
         #[$test_attr]
         async fn menu_about_to_show_dynamic() {
             async_tests::menu_about_to_show_dynamic().await;
+        }
+
+        #[$test_attr]
+        async fn about_to_show_implemented_counter() {
+            async_tests::about_to_show_implemented_counter().await;
+        }
+
+        #[$test_attr]
+        async fn about_to_show_not_implemented_counter() {
+            async_tests::about_to_show_not_implemented_counter().await;
         }
     };
 }

@@ -10,6 +10,7 @@ mod tokio {
 
     pub use tokio::select;
     pub use tokio::sync::Mutex;
+    pub use tokio::task_local;
 
     // remove the return value to compat with async-io
     pub fn spawn<F>(future: F)
@@ -50,6 +51,8 @@ mod async_io {
 
     use async_executor::Executor;
     use std::sync::LazyLock;
+
+    pub use task_local::task_local;
 
     // Do NOT use async_lock::OnceCell instead
     // the spawn method may be called in async context

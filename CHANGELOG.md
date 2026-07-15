@@ -1,3 +1,8 @@
+# 0.3.6 (2026-07-15)
+
+## Added
+- `Tray::menu_about_to_show`, nothing changes if you don't override this method
+
 # 0.3.5 (2026-06-10)
 
 ## Added

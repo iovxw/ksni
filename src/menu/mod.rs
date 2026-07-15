@@ -1,5 +1,7 @@
 //! Types used to construct a menu
 
+pub mod helper;
+
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;

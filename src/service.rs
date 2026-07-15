@@ -504,27 +504,25 @@ impl<T: Tray> Service<T> {
         Ok(())
     }
 
-    /// Return `None` if item not found
-    pub async fn menu_about_to_show(
+    /// Return `false` if item not found
+    pub async fn run_about2show_hook(
         &mut self,
         conn: &Connection,
         id: i32,
-    ) -> zbus::fdo::Result<Option<bool>> {
+    ) -> zbus::fdo::Result<bool> {
         if id == 0 {
             self.tray.menu_about_to_show();
             self.update_properties(conn).await?;
-            Ok(Some(self.update_menu(conn, false).await?))
+            self.update_menu(conn, true).await?;
+            Ok(true)
         } else {
             // TODO: support submenu about_to_show
-            // PLAN: For `about_to_show_group`, perform a single `update_menu`. Then run a diff;
-            // return `true` only if the submenu corresponding to the `id` has been modified.
-            // If changes occur outside the submenu, use a signal.
             // FIXME: What should we do if the layout changed?
             // The challenge with layout changes is that we refresh all `id`s after detecting a
             // layout change (for some host impl that can't handle layout update), but during
             // `about_to_show`, the user menu is open.
             // We need a new algorithm that compatible with all host implementations
-            Ok(self.id2index(id).map(|_| false))
+            Ok(self.id2index(id).is_some())
         }
     }
 
@@ -1785,9 +1783,8 @@ mod tests {
         assert!(matches!(err, zbus::fdo::Error::InvalidArgs(_)));
     }
 
-    /// Calling `menu_about_to_show` with a valid non-root item ID returns
-    /// `Some(false)` because submenu `about_to_show` is not yet supported
-    /// (returns false unconditionally).
+    /// Calling `menu_about_to_show` with a valid non-root submenu ID returns
+    /// `Some(false)`
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
     async fn menu_about_to_show_valid_non_root_returns_false() {
@@ -1804,7 +1801,7 @@ mod tests {
     }
 
     /// Calling `menu_about_to_show` with an unknown or negative ID returns
-    /// `None`, signalling that the item does not exist.
+    /// `None`
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
     async fn menu_about_to_show_invalid_id_returns_none() {

@@ -420,13 +420,14 @@ impl<T: Tray> DbusMenu<T> {
         id: i32,
     ) -> zbus::fdo::Result<bool> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        if service.get_menu_item(id, &[]).is_none() {
-            Err(zbus::fdo::Error::InvalidArgs("id not found".into()))
+        if service.run_about2show_hook(conn, id).await? {
+            // Always return false
+            // libdubusmenu does not respect the return value
+            // Qt’s solution is to always return false, and emit LayoutUpdated/PropertiesUpdated
+            // signals when the menu is updated. We follow the same approach
+            Ok(false)
         } else {
-            service
-                .menu_about_to_show(conn, id)
-                .await?
-                .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".into()))
+            Err(zbus::fdo::Error::InvalidArgs("id not found".into()))
         }
     }
 
@@ -436,24 +437,20 @@ impl<T: Tray> DbusMenu<T> {
         ids: Vec<i32>,
     ) -> zbus::fdo::Result<(Vec<i32>, Vec<i32>)> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        let mut error_ids = Vec::new();
-        let mut changed = Vec::with_capacity(ids.len());
+        let mut not_found_ids = Vec::new();
 
         for &id in &ids {
-            // TODO: only update one time, see `menu_about_to_show`
-            match service.menu_about_to_show(conn, id).await? {
-                Some(true) => changed.push(id),
-                Some(false) => (),
-                None => error_ids.push(id),
+            if !service.run_about2show_hook(conn, id).await? {
+                not_found_ids.push(id);
             }
         }
 
-        if !ids.is_empty() && error_ids.len() == ids.len() {
+        if !ids.is_empty() && not_found_ids.len() == ids.len() {
             Err(zbus::fdo::Error::InvalidArgs(
                 "None of the id in the group can be found".into(),
             ))
         } else {
-            Ok((changed, error_ids))
+            Ok((Vec::new(), not_found_ids))
         }
     }
 

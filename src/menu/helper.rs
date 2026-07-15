@@ -237,3 +237,165 @@ impl<T: 'static> From<Node<T>> for MenuItem<T> {
         }
     }
 }
+
+impl<T> Clone for Node<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Node::Standard {
+                label,
+                enabled,
+                visible,
+                icon_name,
+                icon_data,
+                shortcut,
+                disposition,
+                activate,
+            } => Node::Standard {
+                label: label.clone(),
+                enabled: *enabled,
+                visible: *visible,
+                icon_name: icon_name.clone(),
+                icon_data: icon_data.clone(),
+                shortcut: shortcut.clone(),
+                disposition: *disposition,
+                activate: activate.clone(),
+            },
+            Node::Separator => Node::Separator,
+            Node::Checkmark {
+                label,
+                enabled,
+                visible,
+                checked,
+                icon_name,
+                icon_data,
+                shortcut,
+                disposition,
+                activate,
+            } => Node::Checkmark {
+                label: label.clone(),
+                enabled: *enabled,
+                visible: *visible,
+                checked: *checked,
+                icon_name: icon_name.clone(),
+                icon_data: icon_data.clone(),
+                shortcut: shortcut.clone(),
+                disposition: *disposition,
+                activate: activate.clone(),
+            },
+            Node::Submenu {
+                label,
+                enabled,
+                visible,
+                icon_name,
+                icon_data,
+                shortcut,
+                disposition,
+                submenu,
+            } => Node::Submenu {
+                label: label.clone(),
+                enabled: *enabled,
+                visible: *visible,
+                icon_name: icon_name.clone(),
+                icon_data: icon_data.clone(),
+                shortcut: shortcut.clone(),
+                disposition: *disposition,
+                submenu: submenu.clone(),
+            },
+            Node::RadioGroup {
+                selected,
+                select,
+                options,
+            } => Node::RadioGroup {
+                selected: *selected,
+                select: select.clone(),
+                options: options.clone(),
+            },
+        }
+    }
+}
+
+impl<T> std::fmt::Debug for Node<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Node::Standard {
+                label,
+                enabled,
+                visible,
+                icon_name,
+                icon_data,
+                shortcut,
+                disposition,
+                activate,
+            } => f
+                .debug_struct("Standard")
+                .field("label", label)
+                .field("enabled", enabled)
+                .field("visible", visible)
+                .field("icon_name", icon_name)
+                .field("icon_data", &format!("<{} bytes>", icon_data.len()))
+                .field("shortcut", shortcut)
+                .field("disposition", disposition)
+                .field(
+                    "activate",
+                    &format_args!("<fn @ {:p}>", Arc::as_ptr(activate)),
+                )
+                .finish(),
+            Node::Separator => f.debug_struct("Separator").finish(),
+            Node::Checkmark {
+                label,
+                enabled,
+                visible,
+                checked,
+                icon_name,
+                icon_data,
+                shortcut,
+                disposition,
+                activate,
+            } => f
+                .debug_struct("Checkmark")
+                .field("label", label)
+                .field("enabled", enabled)
+                .field("visible", visible)
+                .field("checked", checked)
+                .field("icon_name", icon_name)
+                .field("icon_data", &format!("<{} bytes>", icon_data.len()))
+                .field("shortcut", shortcut)
+                .field("disposition", disposition)
+                .field(
+                    "activate",
+                    &format_args!("<fn @ {:p}>", Arc::as_ptr(activate)),
+                )
+                .finish(),
+            Node::Submenu {
+                label,
+                enabled,
+                visible,
+                icon_name,
+                icon_data,
+                shortcut,
+                disposition,
+                submenu,
+            } => f
+                .debug_struct("Submenu")
+                .field("label", label)
+                .field("enabled", enabled)
+                .field("visible", visible)
+                .field("icon_name", icon_name)
+                .field("icon_data", &format!("<{} bytes>", icon_data.len()))
+                .field("shortcut", shortcut)
+                .field("disposition", disposition)
+                .field("submenu", submenu)
+                .finish(),
+            Node::RadioGroup {
+                selected,
+                select,
+                options,
+            } => f
+                .debug_struct("RadioGroup")
+                .field("selected", selected)
+                .field("select", &format_args!("<fn @ {:p}>", Arc::as_ptr(select)))
+                .field("options", options)
+                .finish(),
+        }
+    }
+}

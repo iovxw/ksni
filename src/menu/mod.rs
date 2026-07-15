@@ -432,6 +432,7 @@ impl<T> From<RadioGroup<T>> for MenuItem<T> {
 /// Not a menu item, but items of [`RadioGroup`]
 ///
 /// See [`RadioGroup`] for details
+#[derive(Debug, Clone)]
 pub struct RadioItem {
     /// Text of the item, except that:
     /// -# two consecutive underscore characters "__" are displayed as a

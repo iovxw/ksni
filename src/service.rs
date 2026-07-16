@@ -476,6 +476,7 @@ impl<T: Tray> Service<T> {
         })
     }
 
+    /// Return `false` if item not found
     pub async fn event(
         &mut self,
         conn: &Connection,
@@ -484,17 +485,17 @@ impl<T: Tray> Service<T> {
         event_id: &str,
         _data: OwnedValue,
         _timestamp: u32,
-    ) -> zbus::fdo::Result<()> {
+    ) -> zbus::fdo::Result<bool> {
+        let Some(index) = self.id2index(id) else {
+            return Ok(false);
+        };
         match event_id {
+            "clicked" if id == 0 => {
+                return Err(zbus::fdo::Error::InvalidArgs(
+                    "root menu item is not clickable".to_string(),
+                ));
+            }
             "clicked" => {
-                if id == 0 {
-                    return Err(zbus::fdo::Error::InvalidArgs(
-                        "root menu item is not clickable".to_string(),
-                    ));
-                }
-                let index = self
-                    .id2index(id)
-                    .ok_or_else(|| zbus::fdo::Error::InvalidArgs("id not found".to_string()))?;
                 (self.flattened_menu[index].0.on_clicked)(&mut self.tray, index);
                 if do_update {
                     self.update(&conn).await?;
@@ -502,7 +503,7 @@ impl<T: Tray> Service<T> {
             }
             _ => (),
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Return `false` if item not found

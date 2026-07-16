@@ -376,9 +376,13 @@ impl<T: Tray> DbusMenu<T> {
         timestamp: u32,
     ) -> zbus::fdo::Result<()> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        service
+        if !service
             .event(conn, true, id, &event_id, data, timestamp)
-            .await
+            .await?
+        {
+            return Err(zbus::fdo::Error::InvalidArgs("id not found".into()));
+        }
+        Ok(())
     }
 
     async fn event_group(
@@ -397,10 +401,9 @@ impl<T: Tray> DbusMenu<T> {
             .0;
         let mut not_found = Vec::with_capacity(events_len);
         for (id, event_id, data, timestamp) in events {
-            if service
+            if !service
                 .event(conn, id == last_id, id, &event_id, data, timestamp)
-                .await
-                .is_err()
+                .await?
             {
                 not_found.push(id);
             }
@@ -420,7 +423,7 @@ impl<T: Tray> DbusMenu<T> {
         id: i32,
     ) -> zbus::fdo::Result<bool> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        // TODO: run the hook in a separate task
+                                               // TODO: run the hook in a separate task
         if service.run_about2show_hook(conn, id).await? {
             // Always return false
             // libdubusmenu does not respect the return value

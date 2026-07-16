@@ -82,6 +82,18 @@ pub enum MenuItem<T> {
     RadioGroup(RadioGroup<T>),
 }
 
+impl<T> fmt::Debug for MenuItem<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MenuItem::Standard(item) => f.debug_tuple("Standard").field(item).finish(),
+            MenuItem::Separator => f.debug_tuple("Separator").finish(),
+            MenuItem::Checkmark(item) => f.debug_tuple("Checkmark").field(item).finish(),
+            MenuItem::SubMenu(item) => f.debug_tuple("SubMenu").field(item).finish(),
+            MenuItem::RadioGroup(item) => f.debug_tuple("RadioGroup").field(item).finish(),
+        }
+    }
+}
+
 /// Menu item, the standard one
 pub struct StandardItem<T> {
     /// Text of the item, except that:
@@ -129,6 +141,24 @@ pub struct StandardItem<T> {
     ///
     /// [examples/realworld.rs]: https://github.com/iovxw/ksni/blob/master/examples/realworld.rs
     pub activate: Box<dyn Fn(&mut T) + Send>,
+}
+
+impl<T> fmt::Debug for StandardItem<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("StandardItem")
+            .field("label", &self.label)
+            .field("enabled", &self.enabled)
+            .field("visible", &self.visible)
+            .field("icon_name", &self.icon_name)
+            .field("icon_data", &format!("<{} bytes>", self.icon_data.len()))
+            .field("shortcut", &self.shortcut)
+            .field("disposition", &self.disposition)
+            .field(
+                "activate",
+                &format_args!("<fn @ {:p}>", &*self.activate as *const _),
+            )
+            .finish()
+    }
 }
 
 impl<T> Default for StandardItem<T> {
@@ -206,6 +236,21 @@ pub struct SubMenu<T> {
     // pub about_to_show: Box<dyn Fn(&mut T) + Send>,
     /// List of submenu items
     pub submenu: Vec<MenuItem<T>>,
+}
+
+impl<T> fmt::Debug for SubMenu<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("SubMenu")
+            .field("label", &self.label)
+            .field("enabled", &self.enabled)
+            .field("visible", &self.visible)
+            .field("icon_name", &self.icon_name)
+            .field("icon_data", &format!("<{} bytes>", self.icon_data.len()))
+            .field("shortcut", &self.shortcut)
+            .field("disposition", &self.disposition)
+            .field("submenu", &self.submenu)
+            .finish()
+    }
 }
 
 impl<T> Default for SubMenu<T> {
@@ -315,6 +360,25 @@ pub struct CheckmarkItem<T> {
     pub activate: Box<dyn Fn(&mut T) + Send>,
 }
 
+impl<T> fmt::Debug for CheckmarkItem<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("CheckmarkItem")
+            .field("label", &self.label)
+            .field("enabled", &self.enabled)
+            .field("visible", &self.visible)
+            .field("checked", &self.checked)
+            .field("icon_name", &self.icon_name)
+            .field("icon_data", &format!("<{} bytes>", self.icon_data.len()))
+            .field("shortcut", &self.shortcut)
+            .field("disposition", &self.disposition)
+            .field(
+                "activate",
+                &format_args!("<fn @ {:p}>", &*self.activate as *const _),
+            )
+            .finish()
+    }
+}
+
 impl<T> Default for CheckmarkItem<T> {
     fn default() -> Self {
         CheckmarkItem {
@@ -411,6 +475,19 @@ pub struct RadioGroup<T> {
     pub select: Box<dyn Fn(&mut T, usize) + Send>,
     /// List of radio items
     pub options: Vec<RadioItem>,
+}
+
+impl<T> fmt::Debug for RadioGroup<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("RadioGroup")
+            .field("selected", &self.selected)
+            .field(
+                "select",
+                &format_args!("<fn @ {:p}>", &*self.select as *const _),
+            )
+            .field("options", &self.options)
+            .finish()
+    }
 }
 
 impl<T> Default for RadioGroup<T> {

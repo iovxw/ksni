@@ -305,8 +305,9 @@ pub struct CheckmarkItem<T> {
     pub enabled: bool,
     /// True if the item is visible in the menu.
     pub visible: bool,
+    /// Whether the item is currently checked.
     pub checked: bool,
-    /// PNG data of the icon.
+    /// Icon name of the item, following the freedesktop.org icon spec.
     pub icon_name: String,
     /// PNG data of the icon.
     pub icon_data: Vec<u8>,

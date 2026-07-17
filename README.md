@@ -133,6 +133,22 @@ enabling the "async-io" feature
 ksni = { version = "0.3", default-features = false, features = ["async-io"] }
 ```
 
+### Note on Tokio
+
+The `zbus` dependency has a known issue ([z-galaxy/zbus#526](https://github.com/z-galaxy/zbus/issues/526)) that can cause a runtime panic in certain dependency tree configurations.
+
+The panic occurs only if all of the following conditions are met:
+
+1. A crate in your dependency tree enables the `zbus/tokio` feature (e.g., `ksni` with the default features).
+2. Another crate in your dependency tree does not enable the `zbus/tokio` feature.
+3. The crate from step 2 runs `zbus` in its own executor (this usually happens when an async crate provides a blocking API that is being used; a purely blocking crate using `zbus::blocking` directly is not affected).
+
+If you can confirm that the situation described above does not exist, keep the default features.
+This is the preferred approach as it reduces your dependency tree size (See [`Cargo.toml`](./Cargo.toml))
+and avoids spawning an [additional executor thread](./src/compat.rs).
+
+Otherwise, disable `default-features` and use the `async-io`. It makes ksni runtime-agnostic and works seamlessly even if your main application is running on top of Tokio.
+
 ## Blocking API
 
 Enable the "blocking" feature in Cargo.toml to get a non-async API

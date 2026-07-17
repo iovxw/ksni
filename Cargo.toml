@@ -14,7 +14,7 @@ license = "Unlicense"
 exclude = ["reference/", "spec/"]
 
 [features]
-default = ["tokio"]
+default = []
 blocking = []
 tokio = ["dep:tokio", "zbus/tokio"]
 async-io = [

@@ -1,5 +1,5 @@
 #[cfg(all(not(feature = "async-io"), not(feature = "tokio")))]
-compile_error!(r#"Either "tokio" (default) or "async-io" must be enabled."#);
+compile_error!(r#"Either "tokio" or "async-io" feature must be enabled."#);
 
 #[cfg(all(feature = "async-io", feature = "tokio"))]
 compile_error!(r#"Features "tokio" and "async-io" cannot be enabled at the same time."#);

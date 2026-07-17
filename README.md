@@ -125,12 +125,32 @@ Will create a system tray like this:
 
 ## Async Runtime
 
-ksni uses [Tokio] by default, but can be runtime-agnostic by disabling the "tokio" feature and
-enabling the "async-io" feature
+`ksni` does not enable any async runtime by default. You must explicitly choose a runtime by enabling either the `"tokio"` or `"async-io"` feature.
+
+This change was made to prevent a potential runtime panic caused by a known issue in `zbus` ([z-galaxy/zbus#526](https://github.com/z-galaxy/zbus/issues/526)). 
+
+The panic occurs only if all of the following conditions are met:
+
+1. A crate in your dependency tree enables the `zbus/tokio` feature (e.g., `ksni` with the `tokio` feature).
+2. Another crate in your dependency tree does not enable the `zbus/tokio` feature.
+3. The crate from step 2 runs `zbus` in its own executor.
+
+If you can guarantee that the situation described above does not exist, you should use the `tokio` feature.
+This is the preferred approach as it reduces your dependency tree size (See [`Cargo.toml`](./Cargo.toml)) and avoids spawning an
+[additional executor thread](./src/compat.rs).
 
 ```toml
 [dependencies]
-ksni = { version = "0.3", default-features = false, features = ["async-io"] }
+ksni = { version = "0.3", features = ["tokio"] }
+
+```
+
+Otherwise, use the `async-io` feature. It makes ksni runtime-agnostic and works seamlessly even if your main application is running on top of Tokio.
+
+```toml
+[dependencies]
+ksni = { version = "0.3", features = ["async-io"] }
+
 ```
 
 ## Blocking API

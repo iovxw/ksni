@@ -1,6 +1,10 @@
 //! Types used to construct a menu
 
-pub mod helper;
+#[cfg(feature = "node")]
+mod helper;
+#[cfg(feature = "node")]
+#[doc(inline)]
+pub use helper::Node;
 
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};

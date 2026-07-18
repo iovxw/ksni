@@ -2,21 +2,21 @@ use std::sync::Arc;
 
 use super::{Disposition, MenuItem, RadioGroup, RadioItem, StandardItem, SubMenu};
 
-/// A program-friendly menu item
+/// A program-friendly [`MenuItem`]
 ///
-/// This enum is the "flat" counterpart of [`super::MenuItem`].
+/// This enum is the "flat" counterpart of [`MenuItem`].
 /// Each variant carries its fields directly instead of wrapping a separate
-/// struct, the latter approach (used by [`super::MenuItem`]) enables
+/// struct, the latter approach (used by [`MenuItem`]) enables
 /// Rust's struct update syntax (..Default::default()) for human ergonomics,
 /// while this enum is designed for wrapper libraries that construct menus
 /// programmatically from their own data model.
 ///
-/// Unlike [`super::MenuItem`], the callback fields here use [`Arc`] and
+/// Unlike [`MenuItem`], the callback fields here use [`Arc`] and
 /// require [`Sync`].  This is the price of making the enum
 /// [`Clone`]-able, which wrapper libraries often need.
 ///
-/// Use `From<helper::Node<T>>` to convert a node tree into the
-/// MenuItem tree that ksni expects.
+/// Use `.into()` to convert a `Vec<Node<T>>` into a `Vec<MenuItem<T>>` for use with
+/// [`Tray::menu`](crate::Tray::menu).
 ///
 /// # Variants
 ///

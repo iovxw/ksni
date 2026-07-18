@@ -16,6 +16,7 @@ exclude = ["reference/", "spec/"]
 [features]
 default = ["tokio"]
 blocking = []
+node = []
 tokio = ["dep:tokio", "zbus/tokio"]
 async-io = [
     "dep:async-io",

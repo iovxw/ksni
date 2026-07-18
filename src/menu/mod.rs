@@ -4,6 +4,7 @@
 mod helper;
 #[cfg(feature = "node")]
 #[doc(inline)]
+#[cfg_attr(docsrs, doc(cfg(feature = "blocking")))]
 pub use helper::Node;
 
 use std::borrow::Cow;

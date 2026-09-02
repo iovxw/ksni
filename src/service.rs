@@ -14,11 +14,12 @@ use zbus::Connection;
 
 use crate::compat::{self, mpsc, select, Mutex};
 use crate::dbus_interface::{
-    DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE, MENU_PATH,
-    SNI_INTERFACE, SNI_PATH,
+    DbusMenu, Layout, MenuOnlyStatusNotifierItem, StatusNotifierItem, StatusNotifierWatcherProxy,
+    MENU_INTERFACE, MENU_PATH, SNI_INTERFACE, SNI_PATH,
 };
 use crate::menu;
 use crate::{Error, HandleReuest, OfflineReason, Tray};
+use zbus::object_server::SignalEmitter;
 
 static INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
@@ -28,14 +29,18 @@ pub(crate) async fn run<T: Tray>(
     own_name: bool,
     assume_sni_available: bool,
 ) -> Result<impl Future<Output = ()>, Error> {
-    let sni_obj = StatusNotifierItem::new(service.clone());
     let menu_obj = DbusMenu::new(service.clone());
 
     // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
-    let conn = zbus::connection::Builder::session()
+    let builder = zbus::connection::Builder::session()
         .map_err(|e| Error::Dbus(e))?
-        .internal_executor(false) // avoid extra thread when async-io enabled
-        .serve_at(SNI_PATH, sni_obj)
+        .internal_executor(false); // avoid extra thread when async-io enabled
+    let builder = if T::MENU_ON_ACTIVATE {
+        builder.serve_at(SNI_PATH, MenuOnlyStatusNotifierItem::new(service.clone()))
+    } else {
+        builder.serve_at(SNI_PATH, StatusNotifierItem::new(service.clone()))
+    };
+    let conn = builder
         .expect("SNI_PATH should be valid")
         .serve_at(MENU_PATH, menu_obj)
         .expect("MENU_PATH should be valid")
@@ -207,10 +212,7 @@ impl<T: Tray> Service<T> {
     }
 
     async fn update_properties(&mut self, conn: &Connection) -> zbus::Result<()> {
-        let sni_obj = conn
-            .object_server()
-            .interface::<_, StatusNotifierItem<T>>(SNI_PATH)
-            .await?;
+        let sni_emitter = SignalEmitter::new(conn, SNI_PATH)?;
         let menu_obj = conn
             .object_server()
             .interface::<_, DbusMenu<T>>(MENU_PATH)
@@ -224,11 +226,8 @@ impl<T: Tray> Service<T> {
         }
 
         if self.status_changed() {
-            StatusNotifierItem::<T>::new_status(
-                sni_obj.signal_emitter(),
-                &self.get_status().to_string(),
-            )
-            .await?;
+            StatusNotifierItem::<T>::new_status(&sni_emitter, &self.get_status().to_string())
+                .await?;
             menu_changed.insert("Status", self.get_status().to_menu_status().into());
         }
 
@@ -248,27 +247,27 @@ impl<T: Tray> Service<T> {
         // TODO: assert the id is consistent
 
         if self.title_changed() {
-            StatusNotifierItem::<T>::new_title(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_title(&sni_emitter).await?;
         }
         if self.icon_name_changed() || self.icon_pixmap_changed() {
-            StatusNotifierItem::<T>::new_icon(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_icon(&sni_emitter).await?;
         }
         if self.overlay_icon_name_changed() || self.overlay_icon_pixmap_changed() {
-            StatusNotifierItem::<T>::new_overlay_icon(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_overlay_icon(&sni_emitter).await?;
         }
         if self.attention_icon_name_changed()
             || self.attention_icon_pixmap_changed()
             || self.attention_movie_name_changed()
         {
-            StatusNotifierItem::<T>::new_attention_icon(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_attention_icon(&sni_emitter).await?;
         }
         if self.tool_tip_changed() {
-            StatusNotifierItem::<T>::new_tool_tip(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_tool_tip(&sni_emitter).await?;
         }
 
         if !sni_changed.is_empty() {
             zbus::fdo::Properties::properties_changed(
-                sni_obj.signal_emitter(),
+                &sni_emitter,
                 SNI_INTERFACE,
                 sni_changed,
                 Cow::Borrowed(&[]),

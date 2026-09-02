@@ -52,159 +52,166 @@ pub trait StatusNotifierWatcher {
     fn status_notifier_host_unregistered(&self) -> zbus::Result<()>;
 }
 
-pub struct StatusNotifierItem<T>(Arc<Mutex<Service<T>>>);
+// The interface is defined twice, with and without `Activate`.
+// The GNOME AppIndicator extension ignores `ItemIsMenu` and instead
+// introspects the item for an `Activate` method. If present, every
+// left-click waits out the double-click interval before opening the menu.
+// So when `Tray::MENU_ON_ACTIVATE` is set, the item served is the variant without it.
+// Hosts that call `Activate` regardless (KDE Plasma < 6.4) get `UnknownMethod`.
+// https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L803
+// https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L44-L57
+// https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
+macro_rules! status_notifier_item {
+    ($name:ident { $($extra:item)* }) => {
+        pub struct $name<T>(Arc<Mutex<Service<T>>>);
 
-impl<T> StatusNotifierItem<T> {
-    pub fn new(service: Arc<Mutex<Service<T>>>) -> Self {
-        Self(service)
-    }
+        impl<T> $name<T> {
+            pub fn new(service: Arc<Mutex<Service<T>>>) -> Self {
+                Self(service)
+            }
+        }
+
+        #[zbus::interface(name = "org.kde.StatusNotifierItem")]
+        impl<T: Tray> $name<T> {
+            // show a self rendered menu, not supported by ksni
+            fn context_menu(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
+                Err(zbus::fdo::Error::UnknownMethod(
+                    "Not supported, please use `menu`".into(),
+                ))
+            }
+
+            async fn secondary_activate(
+                &self,
+                #[zbus(connection)] conn: &Connection,
+                x: i32,
+                y: i32,
+            ) -> zbus::fdo::Result<()> {
+                let mut service = self.0.lock().await; // do NOT use any self methods after this
+                service.call_secondary_activate(conn, x, y).await;
+                Ok(())
+            }
+
+            async fn scroll(
+                &self,
+                #[zbus(connection)] conn: &Connection,
+                delta: i32,
+                dir: crate::Orientation,
+            ) -> zbus::fdo::Result<()> {
+                let mut service = self.0.lock().await; // do NOT use any self methods after this
+                service.call_scroll(conn, delta, dir).await;
+                Ok(())
+            }
+
+            // properties
+            #[zbus(property)]
+            async fn category(&self) -> zbus::fdo::Result<crate::Category> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_category())
+            }
+
+            #[zbus(property)]
+            async fn id(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_id())
+            }
+
+            #[zbus(property)]
+            async fn title(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_title())
+            }
+
+            #[zbus(property)]
+            async fn status(&self) -> zbus::fdo::Result<crate::Status> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_status())
+            }
+
+            #[zbus(property)]
+            async fn window_id(&self) -> zbus::fdo::Result<i32> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_window_id())
+            }
+
+            #[zbus(property)]
+            async fn icon_theme_path(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_icon_theme_path())
+            }
+
+            #[zbus(property)]
+            fn menu(&self) -> zbus::fdo::Result<ObjectPath<'_>> {
+                Ok(MENU_PATH)
+            }
+
+            #[zbus(property)]
+            fn item_is_menu(&self) -> zbus::fdo::Result<bool> {
+                Ok(T::MENU_ON_ACTIVATE)
+            }
+
+            #[zbus(property)]
+            async fn icon_name(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_icon_name())
+            }
+
+            #[zbus(property)]
+            async fn icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_icon_pixmap())
+            }
+
+            #[zbus(property)]
+            async fn overlay_icon_name(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_overlay_icon_name())
+            }
+
+            #[zbus(property)]
+            async fn overlay_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_overlay_icon_pixmap())
+            }
+
+            #[zbus(property)]
+            async fn attention_icon_name(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_attention_icon_name())
+            }
+
+            #[zbus(property)]
+            async fn attention_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_attention_icon_pixmap())
+            }
+
+            #[zbus(property)]
+            async fn attention_movie_name(&self) -> zbus::fdo::Result<String> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_attention_movie_name())
+            }
+
+            #[zbus(property)]
+            async fn tool_tip(&self) -> zbus::fdo::Result<ToolTip> {
+                let service = self.0.lock().await; // do NOT use any self methods after this
+                Ok(service.get_tool_tip())
+            }
+
+            $($extra)*
+        }
+    };
 }
 
-#[zbus::interface(name = "org.kde.StatusNotifierItem")]
-impl<T: Tray> StatusNotifierItem<T> {
-    // show a self rendered menu, not supported by ksni
-    fn context_menu(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
-        Err(zbus::fdo::Error::UnknownMethod(
-            "Not supported, please use `menu`".into(),
-        ))
-    }
-
+status_notifier_item!(StatusNotifierItem {
     async fn activate(
         &self,
         #[zbus(connection)] conn: &Connection,
         x: i32,
         y: i32,
     ) -> zbus::fdo::Result<()> {
-        if T::MENU_ON_ACTIVATE {
-            // a UnknownMethod is required to make ItemIsMenu work on GNOME
-            // https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L803
-            // KDE Plasma < 6.4 also relies on this behavior
-            // https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L44-L57
-            // KDE Plasma >= 6.4 won't call activate if ItemIsMenu is true, so we can keep this workaround
-            // https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
-            Err(zbus::fdo::Error::UnknownMethod("ItemIsMenu".into()))
-        } else {
-            let mut service = self.0.lock().await; // do NOT use any self methods after this
-            service.call_activate(conn, x, y).await;
-            Ok(())
-        }
-    }
-
-    async fn secondary_activate(
-        &self,
-        #[zbus(connection)] conn: &Connection,
-        x: i32,
-        y: i32,
-    ) -> zbus::fdo::Result<()> {
         let mut service = self.0.lock().await; // do NOT use any self methods after this
-        service.call_secondary_activate(conn, x, y).await;
+        service.call_activate(conn, x, y).await;
         Ok(())
-    }
-
-    async fn scroll(
-        &self,
-        #[zbus(connection)] conn: &Connection,
-        delta: i32,
-        dir: crate::Orientation,
-    ) -> zbus::fdo::Result<()> {
-        let mut service = self.0.lock().await; // do NOT use any self methods after this
-        service.call_scroll(conn, delta, dir).await;
-        Ok(())
-    }
-
-    // properties
-    #[zbus(property)]
-    async fn category(&self) -> zbus::fdo::Result<crate::Category> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_category())
-    }
-
-    #[zbus(property)]
-    async fn id(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_id())
-    }
-
-    #[zbus(property)]
-    async fn title(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_title())
-    }
-
-    #[zbus(property)]
-    async fn status(&self) -> zbus::fdo::Result<crate::Status> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_status())
-    }
-
-    #[zbus(property)]
-    async fn window_id(&self) -> zbus::fdo::Result<i32> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_window_id())
-    }
-
-    #[zbus(property)]
-    async fn icon_theme_path(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_icon_theme_path())
-    }
-
-    #[zbus(property)]
-    fn menu(&self) -> zbus::fdo::Result<ObjectPath<'_>> {
-        Ok(MENU_PATH)
-    }
-
-    #[zbus(property)]
-    fn item_is_menu(&self) -> zbus::fdo::Result<bool> {
-        Ok(T::MENU_ON_ACTIVATE)
-    }
-
-    #[zbus(property)]
-    async fn icon_name(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_icon_name())
-    }
-
-    #[zbus(property)]
-    async fn icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_icon_pixmap())
-    }
-
-    #[zbus(property)]
-    async fn overlay_icon_name(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_overlay_icon_name())
-    }
-
-    #[zbus(property)]
-    async fn overlay_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_overlay_icon_pixmap())
-    }
-
-    #[zbus(property)]
-    async fn attention_icon_name(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_attention_icon_name())
-    }
-
-    #[zbus(property)]
-    async fn attention_icon_pixmap(&self) -> zbus::fdo::Result<Vec<Icon>> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_attention_icon_pixmap())
-    }
-
-    #[zbus(property)]
-    async fn attention_movie_name(&self) -> zbus::fdo::Result<String> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_attention_movie_name())
-    }
-
-    #[zbus(property)]
-    async fn tool_tip(&self) -> zbus::fdo::Result<ToolTip> {
-        let service = self.0.lock().await; // do NOT use any self methods after this
-        Ok(service.get_tool_tip())
     }
 
     // signals
@@ -225,7 +232,9 @@ impl<T: Tray> StatusNotifierItem<T> {
 
     #[zbus(signal)]
     pub async fn new_status(ctxt: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
-}
+});
+
+status_notifier_item!(MenuOnlyStatusNotifierItem {});
 
 #[derive(Debug, Default, Type, Serialize, PartialEq)]
 pub struct Layout {

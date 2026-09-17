@@ -250,6 +250,9 @@ impl<T: Tray> Service<T> {
         if self.title_changed() {
             StatusNotifierItem::<T>::new_title(sni_obj.signal_emitter()).await?;
         }
+        if self.x_ayatana_label_changed() {
+            sni_changed.insert("XAyatanaLabel", self.get_x_ayatana_label().into());
+        }
         if self.icon_name_changed() || self.icon_pixmap_changed() {
             StatusNotifierItem::<T>::new_icon(sni_obj.signal_emitter()).await?;
         }
@@ -596,6 +599,7 @@ macro_rules! def_properties_monitor {
 def_properties_monitor! {
     category: crate::Category,
     title: String,
+    x_ayatana_label: String,
     status: crate::Status,
     window_id: i32,
     icon_theme_path: String,

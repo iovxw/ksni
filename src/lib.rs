@@ -111,6 +111,14 @@ pub trait Tray: Sized + Send + 'static {
         Default::default()
     }
 
+    /// The Ayatana-specific non-standard `XAyatanaLabel` property: a short
+    /// text label shown next to the icon by AppIndicator-based hosts (for
+    /// example GNOME's ubuntu-appindicators extension, which renders this
+    /// property instead of `Title`). Empty by default.
+    fn x_ayatana_label(&self) -> String {
+        Default::default()
+    }
+
     /// Describes the status of this item or of the associated application.
     fn status(&self) -> Status {
         Status::Active

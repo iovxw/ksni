@@ -132,6 +132,12 @@ impl<T: Tray> StatusNotifierItem<T> {
     }
 
     #[zbus(property)]
+    async fn x_ayatana_label(&self) -> zbus::fdo::Result<String> {
+        let service = self.0.lock().await; // do NOT use any self methods after this
+        Ok(service.get_x_ayatana_label())
+    }
+
+    #[zbus(property)]
     async fn status(&self) -> zbus::fdo::Result<crate::Status> {
         let service = self.0.lock().await; // do NOT use any self methods after this
         Ok(service.get_status())

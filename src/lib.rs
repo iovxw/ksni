@@ -92,6 +92,16 @@ pub trait Tray: Sized + Send + 'static {
     /// an hint to the item where to show eventual windows (if any).
     fn secondary_activate(&mut self, _x: i32, _y: i32) {}
 
+    /// The host passes an [XDG activation token], usually right before an
+    /// activation or a menu event.
+    ///
+    /// On Wayland an application may only bring its own window to the front
+    /// with such a token; hand it to the toolkit (e.g. GTK's
+    /// `gtk_window_set_startup_id`) before presenting the window.
+    ///
+    /// [XDG activation token]: https://wayland.app/protocols/xdg-activation-v1
+    fn provide_xdg_activation_token(&mut self, _token: String) {}
+
     /// The user asked for a scroll action. This is caused from input such as
     /// mouse wheel over the graphical representation of the item.
     ///

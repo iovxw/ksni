@@ -546,6 +546,11 @@ impl<T: Tray> Service<T> {
         let _ = self.update(conn).await;
     }
 
+    pub async fn call_provide_xdg_activation_token(&mut self, conn: &Connection, token: String) {
+        self.tray.provide_xdg_activation_token(token);
+        let _ = self.update(conn).await;
+    }
+
     pub async fn call_scroll(
         &mut self,
         conn: &Connection,

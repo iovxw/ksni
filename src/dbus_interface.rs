@@ -101,6 +101,16 @@ impl<T: Tray> StatusNotifierItem<T> {
         Ok(())
     }
 
+    async fn provide_xdg_activation_token(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        token: String,
+    ) -> zbus::fdo::Result<()> {
+        let mut service = self.0.lock().await; // do NOT use any self methods after this
+        service.call_provide_xdg_activation_token(conn, token).await;
+        Ok(())
+    }
+
     async fn scroll(
         &self,
         #[zbus(connection)] conn: &Connection,

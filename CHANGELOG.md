@@ -1,3 +1,8 @@
+# Unreleased
+
+## Added
+- `Tray::provide_xdg_activation_token`, called when the host passes an XDG activation token (`ProvideXdgActivationToken`), nothing changes if you don't override this method
+
 # 0.3.6 (2026-07-15)
 
 ## Added

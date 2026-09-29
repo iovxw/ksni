@@ -106,6 +106,7 @@ impl MockWatcher {
 pub struct CallbackLog {
     pub activations: Vec<(i32, i32)>,
     pub secondary_activations: Vec<(i32, i32)>,
+    pub activation_tokens: Vec<String>,
     pub scrolls: Vec<(i32, String)>,
     pub menu_clicks: Vec<String>,
     pub offline: Vec<String>,
@@ -218,6 +219,10 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
             .unwrap()
             .secondary_activations
             .push((x, y));
+    }
+
+    fn provide_xdg_activation_token(&mut self, token: String) {
+        self.events.lock().unwrap().activation_tokens.push(token);
     }
 
     fn scroll(&mut self, delta: i32, orientation: ksni::Orientation) {
@@ -663,6 +668,9 @@ pub fn sni_property_and_method_assertions(
         .call::<_, _, ()>("SecondaryActivate", &(30_i32, 40_i32))
         .unwrap();
     proxy
+        .call::<_, _, ()>("ProvideXdgActivationToken", &("test-token",))
+        .unwrap();
+    proxy
         .call::<_, _, ()>("Scroll", &(7_i32, "horizontal"))
         .unwrap();
     proxy
@@ -677,6 +685,7 @@ pub fn sni_property_and_method_assertions(
     let snapshot = snapshot_events(events);
     assert_eq!(snapshot.activations, vec![(10, 20)]);
     assert_eq!(snapshot.secondary_activations, vec![(30, 40)]);
+    assert_eq!(snapshot.activation_tokens, vec!["test-token".to_owned()]);
     assert_eq!(
         snapshot.scrolls,
         vec![(7, "Horizontal".into()), (3, "Vertical".into())]

@@ -14,8 +14,8 @@ use zbus::Connection;
 
 use crate::compat::{self, mpsc, select, Mutex};
 use crate::dbus_interface::{
-    DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE, MENU_PATH,
-    SNI_INTERFACE, SNI_PATH,
+    Context, DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE,
+    MENU_PATH, SNI_INTERFACE, SNI_PATH,
 };
 use crate::menu;
 use crate::{Error, HandleReuest, OfflineReason, Tray};
@@ -23,13 +23,14 @@ use crate::{Error, HandleReuest, OfflineReason, Tray};
 static INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 pub(crate) async fn run<T: Tray>(
-    service: Arc<Mutex<Service<T>>>,
+    service: Service<T>,
     mut handle_rx: mpsc::UnboundedReceiver<HandleReuest>,
     own_name: bool,
     assume_sni_available: bool,
 ) -> Result<impl Future<Output = ()>, Error> {
     let sni_obj = StatusNotifierItem::new(service.clone());
     let menu_obj = DbusMenu::new(service.clone());
+    let Service { state, .. } = service;
 
     // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
     let conn = zbus::connection::Builder::session()
@@ -85,7 +86,7 @@ pub(crate) async fn run<T: Tray>(
         if matches!(fdo_err, zbus::fdo::Error::ServiceUnknown(_)) && assume_sni_available {
             // Flag the watcher as offline, it may appear later.
             // Also ask the tray whether to continue or not
-            if !service
+            if !state
                 .lock()
                 .await
                 .tray
@@ -129,12 +130,12 @@ pub(crate) async fn run<T: Tray>(
         .await
         .map_err(|e| Error::Dbus(e))?;
 
-    let service_loop = async move {
+    let service_task = async move {
         loop {
             select! {
                 Some(event) = name_changed_signal.next() => {
                     let args = event.args().expect("dbus daemon should follow the specification");
-                    let service = service.lock().await;
+                    let service = state.lock().await;
                     match args.new_owner.as_ref() {
                         Some(_new_owner) => {
                             if args.old_owner.is_none() {
@@ -168,7 +169,7 @@ pub(crate) async fn run<T: Tray>(
                 Some(msg) = handle_rx.recv() => {
                     match msg {
                         HandleReuest::Update(singal) => {
-                            let mut service = service.lock().await;
+                            let mut service = state.lock().await;
                             let _ = service.update(&conn).await;
                             let _ = singal.send(());
                         }
@@ -182,10 +183,10 @@ pub(crate) async fn run<T: Tray>(
             }
         }
     };
-    Ok(Either::Right(service_loop))
+    Ok(Either::Right(service_task))
 }
 
-pub(crate) struct Service<T> {
+pub(crate) struct State<T> {
     pub tray: T,
     flattened_menu: Vec<(menu::RawMenuItem<T>, Vec<usize>)>,
     prop_monitor: PropertiesMonitor,
@@ -193,19 +194,54 @@ pub(crate) struct Service<T> {
     pub revision: u32,
 }
 
+pub(crate) struct Service<T> {
+    pub state: Arc<Mutex<State<T>>>,
+    pub context: Context,
+}
+
+impl<T> Clone for Service<T> {
+    fn clone(&self) -> Self {
+        Service {
+            state: self.state.clone(),
+            context: self.context.clone(),
+        }
+    }
+}
+
 impl<T: Tray> Service<T> {
-    pub fn new(tray: T) -> Arc<Mutex<Self>> {
+    pub fn new(tray: T) -> Self {
         let flattened_menu = menu::menu_flatten(T::menu(&tray));
         let prop_monitor = PropertiesMonitor::new(&tray);
-        Arc::new(Mutex::new(Service {
-            tray,
-            flattened_menu,
-            prop_monitor,
-            item_id_offset: 0,
-            revision: 0,
-        }))
+        Service {
+            state: Arc::new(Mutex::new(State {
+                tray,
+                flattened_menu,
+                prop_monitor,
+                item_id_offset: 0,
+                revision: 0,
+            })),
+            context: Context::new(),
+        }
     }
 
+    /// If `may_open_window`, will consume a XDG Activation Token. 
+    /// This function should only be called once in one event
+    pub async fn lock_state<F, R>(&self, may_open_window: bool, f: F) -> R
+    where
+        F: AsyncFnOnce(&mut State<T>) -> R,
+    {
+        if may_open_window {
+            let token = self.context.retrieve_token().await;
+            let mut state = self.state.lock().await;
+            self.context.enter(token, &mut state, f).await
+        } else {
+            let mut state = self.state.lock().await;
+            f(&mut state).await
+        }
+    }
+}
+
+impl<T: Tray> State<T> {
     async fn update_properties(&mut self, conn: &Connection) -> zbus::Result<()> {
         let sni_obj = conn
             .object_server()
@@ -397,7 +433,7 @@ impl<T: Tray> Service<T> {
 }
 
 // dbus methods
-impl<T: Tray> Service<T> {
+impl<T: Tray> State<T> {
     /// Build a menu tree from flattened menu
     /// Return None if parent_id not found
     pub fn build_layout(
@@ -546,11 +582,6 @@ impl<T: Tray> Service<T> {
         let _ = self.update(conn).await;
     }
 
-    pub async fn call_provide_xdg_activation_token(&mut self, conn: &Connection, token: String) {
-        self.tray.provide_xdg_activation_token(token);
-        let _ = self.update(conn).await;
-    }
-
     pub async fn call_scroll(
         &mut self,
         conn: &Connection,
@@ -575,7 +606,7 @@ macro_rules! def_properties_monitor {
                 }
             }
         }
-        impl<T: Tray> Service<T> {
+        impl<T: Tray> State<T> {
             paste! {
                 $(
                     /// Generated by def_properties_monitor
@@ -616,9 +647,9 @@ def_properties_monitor! {
     text_direction: crate::TextDirection
 }
 
-impl<T: Tray> Service<T> {
+impl<T: Tray> State<T> {
     // skip PropertiesMonitor,
-    // id is a const property in Service lifetime
+    // id is a const property in T lifetime
     pub fn get_id(&self) -> String {
         self.tray.id()
     }
@@ -635,7 +666,7 @@ fn hash_of<T: Hash>(v: T) -> u64 {
 mod tests {
     use std::sync::Arc;
 
-    use super::Service;
+    use super::{Service, State};
     use crate::{menu::StandardItem, Tray};
     #[cfg(feature = "async-io")]
     use macro_rules_attribute::apply;
@@ -686,15 +717,15 @@ mod tests {
 
     #[cfg(feature = "tokio")]
     fn blocking_lock_service<'a, T>(
-        service: &'a Arc<crate::compat::Mutex<Service<T>>>,
-    ) -> tokio::sync::MutexGuard<'a, Service<T>> {
+        service: &'a Arc<crate::compat::Mutex<State<T>>>,
+    ) -> tokio::sync::MutexGuard<'a, State<T>> {
         service.blocking_lock()
     }
 
     #[cfg(feature = "async-io")]
     fn blocking_lock_service<'a, T>(
-        service: &'a Arc<crate::compat::Mutex<Service<T>>>,
-    ) -> async_lock::MutexGuard<'a, Service<T>> {
+        service: &'a Arc<crate::compat::Mutex<State<T>>>,
+    ) -> async_lock::MutexGuard<'a, State<T>> {
         async_io::block_on(service.lock())
     }
 
@@ -760,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_index2id_mapping() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let mut service_guard = blocking_lock_service(&service);
 
         assert_eq!(service_guard.index2id(0), 0);
@@ -777,7 +808,7 @@ mod tests {
 
     #[test]
     fn test_id2index_mapping() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let mut service_guard = blocking_lock_service(&service);
 
         assert_eq!(service_guard.id2index(0), Some(0));
@@ -800,7 +831,7 @@ mod tests {
 
     #[test]
     fn test_id2index_edge_cases_and_expired_ids() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let mut service_guard = blocking_lock_service(&service);
         let len = service_guard.flattened_menu.len();
 
@@ -823,7 +854,7 @@ mod tests {
 
     #[test]
     fn build_layout_with_zero_recursion_keeps_children_hidden() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let layout = service
@@ -1114,7 +1145,7 @@ mod tests {
             }
         }
 
-        let service = Service::new(ComplexTray);
+        let service = Service::new(ComplexTray).state;
         let service = blocking_lock_service(&service);
 
         let layout = service
@@ -1502,7 +1533,7 @@ mod tests {
             }
         }
 
-        let service = Service::new(DeepTray);
+        let service = Service::new(DeepTray).state;
         let service = blocking_lock_service(&service);
 
         let mut layout = service
@@ -1524,7 +1555,7 @@ mod tests {
 
     #[test]
     fn build_layout_respects_positive_recursion_depth() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let layout = service
@@ -1552,7 +1583,7 @@ mod tests {
 
     #[test]
     fn build_layout_without_recursion_limit_includes_full_subtree_in_order() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let layout = service
@@ -1597,7 +1628,7 @@ mod tests {
 
     #[test]
     fn build_layout_for_submenu_parent_returns_its_subtree() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let root_layout = service
@@ -1639,7 +1670,7 @@ mod tests {
 
     #[test]
     fn build_layout_returns_none_for_unknown_parent_id() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         assert!(service.build_layout(999, None, Vec::new()).is_none());
@@ -1647,7 +1678,7 @@ mod tests {
 
     #[test]
     fn build_layout_preserves_children_display_when_properties_are_filtered() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let layout = service
@@ -1679,7 +1710,7 @@ mod tests {
 
     #[test]
     fn build_layout_excludes_children_display_when_not_in_filter() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let layout = service
@@ -1700,7 +1731,7 @@ mod tests {
 
     #[test]
     fn get_menu_item_returns_none_for_unknown_id() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         assert!(service.get_menu_item(999, &[]).is_none());
@@ -1708,7 +1739,7 @@ mod tests {
 
     #[test]
     fn get_menu_item_with_empty_filter_returns_all_properties() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let root_layout = service
@@ -1732,7 +1763,7 @@ mod tests {
 
     #[test]
     fn get_menu_item_filter_excludes_unspecified_properties() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let root_layout = service
@@ -1750,7 +1781,7 @@ mod tests {
 
     #[test]
     fn get_menu_item_includes_children_display_when_in_filter() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let root_layout = service
@@ -1768,7 +1799,7 @@ mod tests {
 
     #[test]
     fn get_menu_item_leaf_item_never_has_children_display() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let service = blocking_lock_service(&service);
 
         let root_layout = service
@@ -1786,7 +1817,7 @@ mod tests {
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
     async fn assert_root_menu_clicked_returns_invalid_args() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let conn = zbus::Connection::session().await.unwrap();
         let mut service = service.lock().await;
 
@@ -1803,7 +1834,7 @@ mod tests {
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
     async fn run_about2show_hook_valid_non_root_returns_true() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let conn = zbus::Connection::session().await.unwrap();
         let mut service = service.lock().await;
 
@@ -1820,7 +1851,7 @@ mod tests {
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
     async fn run_about2show_hook_invalid_id_returns_false() {
-        let service = Service::new(TestTray);
+        let service = Service::new(TestTray).state;
         let conn = zbus::Connection::session().await.unwrap();
         let mut service = service.lock().await;
 

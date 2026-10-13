@@ -106,11 +106,15 @@ impl MockWatcher {
 pub struct CallbackLog {
     pub activations: Vec<(i32, i32)>,
     pub secondary_activations: Vec<(i32, i32)>,
-    pub activation_tokens: Vec<String>,
     pub scrolls: Vec<(i32, String)>,
     pub menu_clicks: Vec<String>,
     pub offline: Vec<String>,
     pub online_count: usize,
+    /// `ksni::current_xdg_activation_token()` as seen from within the matching
+    /// event callback, in callback order.
+    pub activation_tokens: Vec<Option<String>>,
+    pub secondary_activation_tokens: Vec<Option<String>>,
+    pub menu_click_tokens: Vec<Option<String>>,
 }
 
 pub type CallbackProbe = Arc<Mutex<CallbackLog>>;
@@ -210,19 +214,17 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
     }
 
     fn activate(&mut self, x: i32, y: i32) {
-        self.events.lock().unwrap().activations.push((x, y));
+        let token = ksni::current_xdg_activation_token();
+        let mut events = self.events.lock().unwrap();
+        events.activations.push((x, y));
+        events.activation_tokens.push(token);
     }
 
     fn secondary_activate(&mut self, x: i32, y: i32) {
-        self.events
-            .lock()
-            .unwrap()
-            .secondary_activations
-            .push((x, y));
-    }
-
-    fn provide_xdg_activation_token(&mut self, token: String) {
-        self.events.lock().unwrap().activation_tokens.push(token);
+        let token = ksni::current_xdg_activation_token();
+        let mut events = self.events.lock().unwrap();
+        events.secondary_activations.push((x, y));
+        events.secondary_activation_tokens.push(token);
     }
 
     fn scroll(&mut self, delta: i32, orientation: ksni::Orientation) {
@@ -300,11 +302,10 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
                 shortcut: self.standard_shortcut.clone(),
                 disposition: self.standard_disposition,
                 activate: Box::new(|tray: &mut Self| {
-                    tray.events
-                        .lock()
-                        .unwrap()
-                        .menu_clicks
-                        .push("standard".into());
+                    let token = ksni::current_xdg_activation_token();
+                    let mut events = tray.events.lock().unwrap();
+                    events.menu_clicks.push("standard".into());
+                    events.menu_click_tokens.push(token);
                 }),
             }
             .into(),
@@ -685,10 +686,176 @@ pub fn sni_property_and_method_assertions(
     let snapshot = snapshot_events(events);
     assert_eq!(snapshot.activations, vec![(10, 20)]);
     assert_eq!(snapshot.secondary_activations, vec![(30, 40)]);
-    assert_eq!(snapshot.activation_tokens, vec!["test-token".to_owned()]);
     assert_eq!(
         snapshot.scrolls,
         vec![(7, "Horizontal".into()), (3, "Vertical".into())]
+    );
+}
+
+/// Drives the tray the way real hosts do and checks that
+/// [`ksni::current_xdg_activation_token`] reports the token of the event that
+/// is currently running.
+///
+/// The call order mirrors the reference implementations:
+///
+/// - GNOME `appIndicator.js` sends `ProvideXdgActivationToken` (and awaits it)
+///   right before `Activate` / `SecondaryActivate`.
+/// - KDE `statusnotifieritemsource.cpp` asks for a token, sends
+///   `ProvideXdgActivationToken` and only then triggers the menu `clicked`
+///   event.
+pub fn xdg_activation_token_assertions(
+    connection: &Connection,
+    service_name: &str,
+    events: &CallbackProbe,
+) {
+    let sni = sni_proxy(connection, service_name);
+    let menu = menu_proxy(connection, service_name);
+
+    let activate = |token: Option<&str>, x: i32, y: i32| {
+        if let Some(token) = token {
+            sni.call::<_, _, ()>("ProvideXdgActivationToken", &(token,))
+                .unwrap();
+        }
+        sni.call::<_, _, ()>("Activate", &(x, y)).unwrap();
+    };
+
+    // GNOME: token before Activate is attached to the activation.
+    activate(Some("gnome-activate"), 11, 12);
+    assert_eq!(
+        snapshot_events(events).activation_tokens.last(),
+        Some(&Some("gnome-activate".to_owned()))
+    );
+
+    // GNOME: token before SecondaryActivate is attached to it as well.
+    sni.call::<_, _, ()>("ProvideXdgActivationToken", &("gnome-secondary",))
+        .unwrap();
+    sni.call::<_, _, ()>("SecondaryActivate", &(21_i32, 22_i32))
+        .unwrap();
+    assert_eq!(
+        snapshot_events(events).secondary_activation_tokens.last(),
+        Some(&Some("gnome-secondary".to_owned()))
+    );
+
+    // KDE: token before a menu click is attached to it.
+    let (_, layout): (u32, LayoutTuple) = menu
+        .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
+        .unwrap();
+    let layout = decode_layout(layout);
+    let standard = find_layout_by_label(&layout, "Open").expect("standard item should exist");
+    sni.call::<_, _, ()>("ProvideXdgActivationToken", &("kde-menu",))
+        .unwrap();
+    menu.call::<_, _, ()>(
+        "Event",
+        &(
+            standard.id,
+            "clicked".to_string(),
+            OwnedValue::from(0_u8),
+            0_u32,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot_events(events).menu_click_tokens.last(),
+        Some(&Some("kde-menu".to_owned()))
+    );
+
+    // Without a token an activation reports none.
+    activate(None, 31, 32);
+    assert_eq!(
+        snapshot_events(events).activation_tokens.last(),
+        Some(&None)
+    );
+
+    // A single token is consumed by the first event only.
+    activate(Some("only-one"), 41, 42);
+    activate(None, 43, 44);
+    let tokens = snapshot_events(events).activation_tokens;
+    assert_eq!(tokens[tokens.len() - 2].as_deref(), Some("only-one"));
+    assert_eq!(tokens[tokens.len() - 1], None);
+
+    // Several tokens are queued and consumed in order.
+    activate(Some("fifo-a"), 51, 52);
+    activate(Some("fifo-b"), 53, 54);
+    let tokens = snapshot_events(events).activation_tokens;
+    assert_eq!(tokens[tokens.len() - 2].as_deref(), Some("fifo-a"));
+    assert_eq!(tokens[tokens.len() - 1].as_deref(), Some("fifo-b"));
+}
+
+/// Group-event token attribution, driven through `EventGroup` the way hosts
+/// batch menu events:
+///
+/// - A group containing only non-`clicked` events (`opened`/`closed`, i.e.
+///   submenu expansion) must not consume a token.
+/// - A group with several `clicked` events consumes one token per event, in
+///   order.
+pub fn xdg_activation_token_group_assertions(
+    connection: &Connection,
+    service_name: &str,
+    events: &CallbackProbe,
+) {
+    let sni = sni_proxy(connection, service_name);
+    let menu = menu_proxy(connection, service_name);
+
+    let (_, layout): (u32, LayoutTuple) = menu
+        .call("GetLayout", &(0_i32, -1_i32, Vec::<String>::new()))
+        .unwrap();
+    let layout = decode_layout(layout);
+    let standard = find_layout_by_label(&layout, "Open").expect("standard item should exist");
+
+    let menu_event =
+        |id: i32, event_id: &str| (id, event_id.to_string(), OwnedValue::from(0_u8), 0_u32);
+
+    // A group without "clicked" (submenu opened/closed) must not consume a
+    // token: the queued token survives and is attached to the next click.
+    sni.call::<_, _, ()>("ProvideXdgActivationToken", &("group-keep",))
+        .unwrap();
+    let clicks_before = snapshot_events(events).menu_clicks.len();
+    let not_found: Vec<i32> = menu
+        .call(
+            "EventGroup",
+            &(vec![
+                menu_event(standard.id, "opened"),
+                menu_event(standard.id, "closed"),
+            ],),
+        )
+        .unwrap();
+    assert_eq!(not_found, Vec::<i32>::new());
+    assert_eq!(
+        snapshot_events(events).menu_clicks.len(),
+        clicks_before,
+        "opened/closed must not trigger the activate closure"
+    );
+    menu.call::<_, _, ()>("Event", &menu_event(standard.id, "clicked"))
+        .unwrap();
+    assert_eq!(
+        snapshot_events(events).menu_click_tokens.last(),
+        Some(&Some("group-keep".to_owned()))
+    );
+
+    // Several "clicked" events in one group consume one token each, in order.
+    sni.call::<_, _, ()>("ProvideXdgActivationToken", &("group-first",))
+        .unwrap();
+    sni.call::<_, _, ()>("ProvideXdgActivationToken", &("group-second",))
+        .unwrap();
+    let not_found: Vec<i32> = menu
+        .call(
+            "EventGroup",
+            &(vec![
+                menu_event(standard.id, "clicked"),
+                menu_event(standard.id, "clicked"),
+            ],),
+        )
+        .unwrap();
+    assert_eq!(not_found, Vec::<i32>::new());
+    let tokens = snapshot_events(events).menu_click_tokens;
+    assert_eq!(tokens[tokens.len() - 2].as_deref(), Some("group-first"));
+    assert_eq!(tokens[tokens.len() - 1].as_deref(), Some("group-second"));
+
+    // The queue is empty again.
+    sni.call::<_, _, ()>("Activate", &(61_i32, 62_i32)).unwrap();
+    assert_eq!(
+        snapshot_events(events).activation_tokens.last(),
+        Some(&None)
     );
 }
 

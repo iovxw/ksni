@@ -46,6 +46,25 @@ task_local! {
     pub(crate) static NO_ABOUT_TO_SHOW: Cell<bool>;
 }
 
+/// Returns the [XDG activation token] associated with the current event.
+///
+/// On Wayland an application may only bring its own window to the front
+/// with such a token. Pass it to the toolkit (e.g. GTK's
+/// `gtk_window_set_startup_id`) before presenting the window.
+///
+/// Hosts usually provides a token to [`Tray::activate`], [`Tray::secondary_activate`]
+/// and [`MenuItem`] click events, within which this function returns the token, elsewhere
+/// it returns `None`.
+///
+/// Note: the GNOME AppIndicator/KStatusNotifierItem extension only provides token to
+/// [`Tray::activate`] and [`Tray::secondary_activate`], KDE provides token to all three.
+///
+/// [XDG activation token]: https://wayland.app/protocols/xdg-activation-v1
+pub fn current_xdg_activation_token() -> Option<String> {
+    let ctx = dbus_interface::Context::from_env()?;
+    ctx.current_event_token()
+}
+
 /// A system tray, implement this to create your tray
 pub trait Tray: Sized + Send + 'static {
     /// Replaces the default activate behavior with opening the menu
@@ -91,16 +110,6 @@ pub trait Tray: Sized + Send + 'static {
     /// the x and y parameters are in screen coordinates and is to be considered
     /// an hint to the item where to show eventual windows (if any).
     fn secondary_activate(&mut self, _x: i32, _y: i32) {}
-
-    /// The host passes an [XDG activation token], usually right before an
-    /// activation or a menu event.
-    ///
-    /// On Wayland an application may only bring its own window to the front
-    /// with such a token; hand it to the toolkit (e.g. GTK's
-    /// `gtk_window_set_startup_id`) before presenting the window.
-    ///
-    /// [XDG activation token]: https://wayland.app/protocols/xdg-activation-v1
-    fn provide_xdg_activation_token(&mut self, _token: String) {}
 
     /// The user asked for a scroll action. This is caused from input such as
     /// mouse wheel over the graphical representation of the item.
@@ -516,11 +525,11 @@ async fn spawn_with_options<T: Tray>(
 ) -> Result<Handle<T>, Error> {
     let (handle_tx, handle_rx) = mpsc::unbounded_channel();
     let service = service::Service::new(tray);
-    let service_loop =
-        service::run(service.clone(), handle_rx, own_name, assume_sni_available).await?;
-    compat::spawn(service_loop);
+    let weak_state = Arc::downgrade(&service.state);
+    let service_task = service::run(service, handle_rx, own_name, assume_sni_available).await?;
+    compat::spawn(service_task);
     Ok(Handle {
-        service: Arc::downgrade(&service),
+        state: weak_state,
         sender: handle_tx,
     })
 }
@@ -532,7 +541,7 @@ pub(crate) enum HandleReuest {
 
 /// Handle to the tray
 pub struct Handle<T> {
-    service: Weak<Mutex<service::Service<T>>>,
+    state: Weak<Mutex<service::State<T>>>,
     sender: mpsc::UnboundedSender<HandleReuest>,
 }
 
@@ -542,9 +551,9 @@ impl<T> Handle<T> {
     /// Returns the result of `f`, returns `None` if the tray service
     /// has been shutdown.
     pub async fn update<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> Option<R> {
-        if let Some(service) = self.service.upgrade() {
+        if let Some(state) = self.state.upgrade() {
             // NOTE: free the lock before send any message
-            let r = f(&mut service.lock().await.tray);
+            let r = f(&mut state.lock().await.tray);
             let (tx, rx) = oneshot::channel();
             if self.sender.send(HandleReuest::Update(tx)).is_ok() {
                 let _ = rx.await;
@@ -617,7 +626,7 @@ impl std::future::Future for ShutdownAwaiter {
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Handle {
-            service: self.service.clone(),
+            state: self.state.clone(),
             sender: self.sender.clone(),
         }
     }

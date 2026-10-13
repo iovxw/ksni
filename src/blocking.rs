@@ -178,17 +178,18 @@ fn spawn_with_options<T: Tray>(
 ) -> Result<Handle<T>, Error> {
     let (handle_tx, handle_rx) = mpsc::unbounded_channel();
     let service = service::Service::new(tray);
-    let service_loop = compat::block_on(service::run(
-        service.clone(),
+    let weak_state = Arc::downgrade(&service.state);
+    let service_task = compat::block_on(service::run(
+        service,
         handle_rx,
         own_name,
         assume_sni_available,
     ))?;
     thread::spawn(move || {
-        compat::block_on(service_loop);
+        compat::block_on(service_task);
     });
     Ok(Handle(crate::Handle {
-        service: Arc::downgrade(&service),
+        state: weak_state,
         sender: handle_tx,
     }))
 }

@@ -1,7 +1,7 @@
 # Unreleased
 
 ## Added
-- `Tray::provide_xdg_activation_token`, called when the host passes an XDG activation token (`ProvideXdgActivationToken`), nothing changes if you don't override this method
+- `ksni::current_xdg_activation_token`, returns the XDG activation token of the current event
 
 # 0.3.6 (2026-07-15)
 

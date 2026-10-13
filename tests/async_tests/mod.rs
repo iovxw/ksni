@@ -9,7 +9,8 @@ use crate::common::{
     dbusmenu_assertions, decode_layout, find_layout_by_label, has_owner, menu_proxy, message_body,
     mutate_sni_properties, properties, registration_and_watcher_assertions, session_connection,
     snapshot_events, sni_property_and_method_assertions, sni_proxy, spawn_filtered_signal_waiter,
-    spawn_signal_waiter, watcher_proxy, LayoutTuple, MockWatcher, RegisterItemError, TestTray,
+    spawn_signal_waiter, watcher_proxy, xdg_activation_token_assertions,
+    xdg_activation_token_group_assertions, LayoutTuple, MockWatcher, RegisterItemError, TestTray,
     WatcherState, DEFAULT_TIMEOUT, MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE, SNI_INTERFACE,
     SNI_PATH, WATCHER_NAME, WATCHER_PATH,
 };
@@ -414,6 +415,59 @@ pub async fn status_notifier_item_protocol() {
         assert_eq!(
             proxy.get_property::<String>("Status").unwrap(),
             "NeedsAttention"
+        );
+    })
+    .await;
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
+/// Drives the tray the way the reference hosts do and checks that
+/// `ksni::current_xdg_activation_token()` reports the token of the running
+/// event. See `xdg_activation_token_assertions` in `tests/common` for the
+/// exact sequences.
+pub async fn xdg_activation_token() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT).await;
+    let service_name_for_assertions = service_name.clone();
+    let events_for_assertions = events.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        xdg_activation_token_assertions(
+            &connection,
+            &service_name_for_assertions,
+            &events_for_assertions,
+        );
+    })
+    .await;
+
+    handle.shutdown().await;
+    close_watcher(watcher).await;
+}
+
+/// Drives `EventGroup` the way hosts batch menu events and checks the XDG
+/// activation token attribution. See `xdg_activation_token_group_assertions`
+/// in `tests/common` for the exact sequences.
+pub async fn xdg_activation_token_group() {
+    use ksni::TrayMethods as _;
+
+    let watcher = start_watcher(true, None).await;
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().await.expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT).await;
+    let service_name_for_assertions = service_name.clone();
+    let events_for_assertions = events.clone();
+    with_blocking(move || {
+        let connection = session_connection();
+        xdg_activation_token_group_assertions(
+            &connection,
+            &service_name_for_assertions,
+            &events_for_assertions,
         );
     })
     .await;
@@ -998,6 +1052,16 @@ macro_rules! async_protocol_tests {
         #[$test_attr]
         async fn status_notifier_item() {
             async_tests::status_notifier_item_protocol().await;
+        }
+
+        #[$test_attr]
+        async fn xdg_activation_token() {
+            async_tests::xdg_activation_token().await;
+        }
+
+        #[$test_attr]
+        async fn xdg_activation_token_group() {
+            async_tests::xdg_activation_token_group().await;
         }
 
         #[$test_attr]

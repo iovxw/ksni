@@ -10,9 +10,10 @@ use common::{
     dbusmenu_assertions, decode_layout, find_layout_by_label, has_owner, menu_proxy, message_body,
     mutate_sni_properties, properties, registration_and_watcher_assertions, session_connection,
     snapshot_events, sni_property_and_method_assertions, sni_proxy, spawn_filtered_signal_waiter,
-    spawn_signal_waiter, wait_until, watcher_proxy, LayoutTuple, MockWatcher, RegisterItemError,
-    TestTray, WatcherState, DEFAULT_TIMEOUT, MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE,
-    SNI_INTERFACE, SNI_PATH, WATCHER_NAME, WATCHER_PATH,
+    spawn_signal_waiter, wait_until, watcher_proxy, xdg_activation_token_assertions,
+    xdg_activation_token_group_assertions, LayoutTuple, MockWatcher, RegisterItemError, TestTray,
+    WatcherState, DEFAULT_TIMEOUT, MENU_INTERFACE, MENU_PATH, PROPERTIES_INTERFACE, SNI_INTERFACE,
+    SNI_PATH, WATCHER_NAME, WATCHER_PATH,
 };
 
 struct WatcherHandle {
@@ -315,6 +316,45 @@ fn status_notifier_item_protocol() {
         proxy.get_property::<String>("Status").unwrap(),
         "NeedsAttention"
     );
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
+/// Drives the tray the way the reference hosts do and checks that
+/// `ksni::current_xdg_activation_token()` reports the token of the running
+/// event. See `xdg_activation_token_assertions` in `tests/common` for the
+/// exact sequences.
+#[test]
+fn xdg_activation_token() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    let connection = session_connection();
+
+    xdg_activation_token_assertions(&connection, &service_name, &events);
+
+    handle.shutdown().wait();
+    watcher.close();
+}
+
+/// Drives `EventGroup` the way hosts batch menu events and checks the XDG
+/// activation token attribution. See `xdg_activation_token_group_assertions`
+/// in `tests/common` for the exact sequences.
+#[test]
+fn xdg_activation_token_group() {
+    use ksni::blocking::TrayMethods as _;
+
+    let watcher = WatcherHandle::start(true).unwrap();
+    let (tray, events) = TestTray::<false>::new("runtime-protocol-tray");
+    let handle = tray.spawn().expect("tray should start");
+    let service_name = watcher.wait_for_item_registration(DEFAULT_TIMEOUT);
+    let connection = session_connection();
+
+    xdg_activation_token_group_assertions(&connection, &service_name, &events);
 
     handle.shutdown().wait();
     watcher.close();

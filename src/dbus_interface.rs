@@ -79,13 +79,13 @@ impl Context {
     ) -> R {
         debug_assert!(self.current_event_token.load().is_none());
         self.current_event_token.store(Some(Arc::new(init_token)));
-        struct TokenGurad<'a>(&'a Context);
-        impl<'a> Drop for TokenGurad<'a> {
+        struct TokenGuard<'a>(&'a Context);
+        impl<'a> Drop for TokenGuard<'a> {
             fn drop(&mut self) {
                 self.0.current_event_token.store(None);
             }
         }
-        let _defer = TokenGurad(self);
+        let _defer = TokenGuard(self);
         DBUS_CONTEXT.scope(self.clone(), f(state)).await
     }
 

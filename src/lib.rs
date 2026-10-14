@@ -52,7 +52,7 @@ task_local! {
 /// with such a token. Pass it to the toolkit (e.g. GTK's
 /// `gtk_window_set_startup_id`) before presenting the window.
 ///
-/// Hosts usually provides a token to [`Tray::activate`], [`Tray::secondary_activate`]
+/// The host usually provides a token to [`Tray::activate`], [`Tray::secondary_activate`]
 /// and [`MenuItem`] click events, within which this function returns the token, elsewhere
 /// it returns `None`.
 ///
@@ -534,7 +534,7 @@ async fn spawn_with_options<T: Tray>(
     })
 }
 
-pub(crate) enum HandleReuest {
+pub(crate) enum HandleRequest {
     Update(oneshot::Sender<()>),
     Shutdown(oneshot::Sender<()>),
 }
@@ -542,7 +542,7 @@ pub(crate) enum HandleReuest {
 /// Handle to the tray
 pub struct Handle<T> {
     state: Weak<Mutex<service::State<T>>>,
-    sender: mpsc::UnboundedSender<HandleReuest>,
+    sender: mpsc::UnboundedSender<HandleRequest>,
 }
 
 impl<T> Handle<T> {
@@ -555,7 +555,7 @@ impl<T> Handle<T> {
             // NOTE: free the lock before send any message
             let r = f(&mut state.lock().await.tray);
             let (tx, rx) = oneshot::channel();
-            if self.sender.send(HandleReuest::Update(tx)).is_ok() {
+            if self.sender.send(HandleRequest::Update(tx)).is_ok() {
                 let _ = rx.await;
                 return Some(r);
             }
@@ -566,7 +566,7 @@ impl<T> Handle<T> {
     /// Shutdown the tray service
     pub fn shutdown(&self) -> ShutdownAwaiter {
         let (tx, rx) = oneshot::channel();
-        if self.sender.send(HandleReuest::Shutdown(tx)).is_ok() {
+        if self.sender.send(HandleRequest::Shutdown(tx)).is_ok() {
             ShutdownAwaiter::new(rx)
         } else {
             ShutdownAwaiter::empty()

@@ -18,13 +18,13 @@ use crate::dbus_interface::{
     MENU_PATH, SNI_INTERFACE, SNI_PATH,
 };
 use crate::menu;
-use crate::{Error, HandleReuest, OfflineReason, Tray};
+use crate::{Error, HandleRequest, OfflineReason, Tray};
 
 static INSTANCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 pub(crate) async fn run<T: Tray>(
     service: Service<T>,
-    mut handle_rx: mpsc::UnboundedReceiver<HandleReuest>,
+    mut handle_rx: mpsc::UnboundedReceiver<HandleRequest>,
     own_name: bool,
     assume_sni_available: bool,
 ) -> Result<impl Future<Output = ()>, Error> {
@@ -168,14 +168,14 @@ pub(crate) async fn run<T: Tray>(
                 }
                 Some(msg) = handle_rx.recv() => {
                     match msg {
-                        HandleReuest::Update(singal) => {
+                        HandleRequest::Update(signal) => {
                             let mut service = state.lock().await;
                             let _ = service.update(&conn).await;
-                            let _ = singal.send(());
+                            let _ = signal.send(());
                         }
-                        HandleReuest::Shutdown(singal) => {
+                        HandleRequest::Shutdown(signal) => {
                             let _ = conn.close().await;
-                            let _ = singal.send(());
+                            let _ = signal.send(());
                             break;
                         }
                     }

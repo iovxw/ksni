@@ -25,7 +25,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libdbus-1-dev dbus-daemon
+        sudo apt-get install -y libdbus-1-dev dbus-daemon libgtk-4-dev
     - name: Setup Rust
       uses: hecrj/setup-rust-action@v1
       with:
@@ -35,4 +35,4 @@ jobs:
       run: cargo install cargo-nextest --locked
     - name: Run Tests
       run: cargo nextest run --verbose --no-fail-fast ${{ matrix.feature-flags }}
-      continue-on-error: ${{ matrix.can-fail }}
+      continue-on-error: ${{ matrix.can-fail || false }}

@@ -53,6 +53,7 @@ image = "0.25"
 zbus = { version = "5", default-features = false, features = ["blocking-api"] }
 ashpd = { version = "0.13", default-features = false, features = ["async-io"]}
 chrono = "0.4"
+gtk4 = "0.9"
 
 [[example]]
 name = "async"
@@ -76,6 +77,10 @@ required-features = ["tokio"]
 doc-scrape-examples = true
 [[example]]
 name = "realworld"
+required-features = ["tokio"]
+doc-scrape-examples = true
+[[example]]
+name = "xdg_activation_token"
 required-features = ["tokio"]
 doc-scrape-examples = true
 

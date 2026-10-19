@@ -56,9 +56,6 @@ task_local! {
 /// and [`MenuItem`] click events, within which this function returns the token, elsewhere
 /// it returns `None`.
 ///
-/// Note: the GNOME AppIndicator/KStatusNotifierItem extension only provides token to
-/// [`Tray::activate`] and [`Tray::secondary_activate`], KDE provides token to all three.
-///
 /// [XDG activation token]: https://wayland.app/protocols/xdg-activation-v1
 pub fn current_xdg_activation_token() -> Option<String> {
     let ctx = dbus_interface::Context::from_env()?;

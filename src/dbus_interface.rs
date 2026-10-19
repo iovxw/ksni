@@ -20,6 +20,22 @@ pub const SNI_INTERFACE: InterfaceName =
     InterfaceName::from_static_str_unchecked("org.kde.StatusNotifierItem");
 pub const MENU_INTERFACE: InterfaceName =
     InterfaceName::from_static_str_unchecked("com.canonical.dbusmenu");
+
+/// ```text
+///               |<token is valid in this duration>|
+///  <------------|----------------|----------------|-------------->
+///               ↑                ↑                ↑
+///            -100ms              0              +20ms
+///         TOKEN_MAX_AGE    EVENT ARRIVED   TOKEN_GRACE_PERIOD
+/// ```
+///
+/// How long a token may stay queued before it is considered stale. When a token
+/// is dequeued and it was obtained longer ago than this, it is discarded and the
+/// next queued token is tried.
+const TOKEN_MAX_AGE: Duration = Duration::from_millis(100);
+
+/// How long after an event starts a token arriving late may still be attached
+/// to that running event. A token arriving later is queued for the next event.
 const TOKEN_GRACE_PERIOD: Duration = Duration::from_millis(20);
 
 task_local! {
@@ -45,7 +61,7 @@ impl From<TokenState> for Option<String> {
 #[derive(Clone)]
 pub struct Context {
     current_event_token: Arc<ArcSwapOption<TokenState>>,
-    pending_tokens: Arc<SegQueue<String>>,
+    pending_tokens: Arc<SegQueue<(Instant, String)>>,
 }
 
 impl Context {
@@ -62,10 +78,12 @@ impl Context {
     }
 
     pub async fn retrieve_token(&self) -> TokenState {
-        self.pending_tokens
-            .pop()
-            .map(|token| TokenState::Ready(token))
-            .unwrap_or_else(|| TokenState::Waiting(Instant::now()))
+        while let Some((timestamp, token)) = self.pending_tokens.pop() {
+            if timestamp.elapsed() <= TOKEN_MAX_AGE {
+                return TokenState::Ready(token);
+            }
+        }
+        TokenState::Waiting(Instant::now())
     }
 
     pub async fn enter<F: AsyncFnOnce(&mut State<T>) -> R, R, T>(
@@ -208,7 +226,7 @@ impl<T: Tray> StatusNotifierItem<T> {
             }
         };
         if token_is_for_next_event {
-            let _ = self.0.context.pending_tokens.push(token);
+            let _ = self.0.context.pending_tokens.push((token_timestamp, token));
         }
         Ok(())
     }
@@ -686,7 +704,8 @@ impl<T: Tray> DbusMenu<T> {
 /// The token attribution rule is:
 ///
 /// - A token received while no event is running is queued and belongs to the
-///   next event that consumes a token, no matter how long before it arrives.
+///   next event that consumes a token, as long as it was obtained less than
+///   [`TOKEN_MAX_AGE`] before being dequeued.
 /// - If an event that needs a token did not receive one before it started, a
 ///   token arriving afterwards still belongs to it only when it arrives within
 ///   [`TOKEN_GRACE_PERIOD`] of the event start, otherwise the event gets no
@@ -705,7 +724,7 @@ mod tests {
     #[cfg(feature = "async-io")]
     use smol_macros::test;
 
-    use super::{Context, StatusNotifierItem, TokenState};
+    use super::{Context, StatusNotifierItem, TokenState, TOKEN_MAX_AGE};
     use crate::service::Service;
     use crate::Tray;
 
@@ -810,8 +829,8 @@ mod tests {
     #[cfg_attr(feature = "async-io", apply(test!))]
     async fn retrieve_token_pops_fifo() {
         let ctx = Context::new();
-        ctx.pending_tokens.push("first".into());
-        ctx.pending_tokens.push("second".into());
+        ctx.pending_tokens.push((Instant::now(), "first".into()));
+        ctx.pending_tokens.push((Instant::now(), "second".into()));
 
         assert_eq!(
             ctx.retrieve_token().await,
@@ -822,6 +841,34 @@ mod tests {
             TokenState::Ready("second".into())
         );
         assert!(matches!(ctx.retrieve_token().await, TokenState::Waiting(_)));
+    }
+
+    #[cfg_attr(feature = "tokio", tokio::test)]
+    #[cfg_attr(feature = "async-io", apply(test!))]
+    async fn retrieve_token_discards_expired_token() {
+        let ctx = Context::new();
+        ctx.pending_tokens.push((
+            Instant::now() - TOKEN_MAX_AGE - Duration::from_millis(1),
+            "stale".into(),
+        ));
+
+        assert!(matches!(ctx.retrieve_token().await, TokenState::Waiting(_)));
+    }
+
+    #[cfg_attr(feature = "tokio", tokio::test)]
+    #[cfg_attr(feature = "async-io", apply(test!))]
+    async fn retrieve_token_skips_expired_token_and_returns_fresh_one() {
+        let ctx = Context::new();
+        ctx.pending_tokens.push((
+            Instant::now() - TOKEN_MAX_AGE - Duration::from_millis(1),
+            "stale".into(),
+        ));
+        ctx.pending_tokens.push((Instant::now(), "fresh".into()));
+
+        assert_eq!(
+            ctx.retrieve_token().await,
+            TokenState::Ready("fresh".into())
+        );
     }
 
     /// A token sent before any event is delivered to the next event, and is not
@@ -852,16 +899,17 @@ mod tests {
         assert_eq!(seen, None);
     }
 
-    /// Queued tokens are consumed in order and do not expire while waiting.
+    /// Queued tokens are consumed in order, and tokens older than the maximum
+    /// age are discarded so they do not block newer ones.
     #[cfg_attr(feature = "tokio", tokio::test)]
     #[cfg_attr(feature = "async-io", apply(test!))]
-    async fn queued_tokens_are_fifo_and_do_not_expire() {
+    async fn queued_tokens_are_fifo_and_expire() {
         let service = service();
         let sni = StatusNotifierItem::new(service.clone());
         sni.provide_xdg_activation_token("first".into())
             .await
             .unwrap();
-        std::thread::sleep(Duration::from_millis(30));
+        std::thread::sleep(Duration::from_millis(150));
         sni.provide_xdg_activation_token("second".into())
             .await
             .unwrap();
@@ -876,8 +924,8 @@ mod tests {
             .lock_state(true, async |_state| crate::current_xdg_activation_token())
             .await;
 
-        assert_eq!(first.as_deref(), Some("first"));
-        assert_eq!(second.as_deref(), Some("second"));
+        assert_eq!(first.as_deref(), Some("second"));
+        assert_eq!(second, None);
         assert_eq!(third, None);
     }
 

@@ -24,7 +24,6 @@ const TOKEN_GRACE_PERIOD: Duration = Duration::from_millis(20);
 
 task_local! {
     static DBUS_CONTEXT: Context;
-    static TOKEN_INIT_STATE: TokenState;
 }
 
 #[derive(Debug, PartialEq, Clone)]

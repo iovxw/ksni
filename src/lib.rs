@@ -56,6 +56,11 @@ task_local! {
 /// and [`MenuItem`] click events, within which this function returns the token, elsewhere
 /// it returns `None`.
 ///
+/// Note: the delivery of the token and the triggering of the tray event are not
+/// ordered. The token may arrive at the same time as or slightly after the
+/// current event (e.g. under KDE), or never, so callers should retry
+/// (e.g. wait 1ms and call this again).
+///
 /// [XDG activation token]: https://wayland.app/protocols/xdg-activation-v1
 pub fn current_xdg_activation_token() -> Option<String> {
     let ctx = dbus_interface::Context::from_env()?;

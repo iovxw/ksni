@@ -21,7 +21,15 @@ impl ActivationTray {
             eprintln!("{source}: activation token forced to None");
             None
         } else {
-            ksni::current_xdg_activation_token()
+            if let r @ Some(_) = ksni::current_xdg_activation_token() {
+                r
+            } else {
+                eprintln!("{source}: activation token = None, retrying");
+                // KDE may deliver the activation token slightly after the tray event
+                // Waiting 1ms and retrying gets it in most cases.
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                ksni::current_xdg_activation_token()
+            }
         };
         eprintln!("{source}: activation token = {token:?}");
 

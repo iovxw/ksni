@@ -95,4 +95,4 @@ name = "blocking"
 required-features = ["blocking"]
 
 [package.metadata.docs.rs]
-features = ["blocking"]
+features = ["blocking", "node"]

@@ -1,4 +1,4 @@
-# Unreleased
+# 0.3.7 (2026-10-20)
 
 ## Added
 - `ksni::current_xdg_activation_token`, returns the XDG activation token of the current event

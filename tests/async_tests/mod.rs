@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use zbus::connection;
-use zbus::zvariant::OwnedValue;
+use zbus::OwnedVariant;
 
 use crate::common::{
     dbusmenu_assertions, decode_layout, find_layout_by_label, has_owner, menu_proxy, message_body,
@@ -73,14 +73,14 @@ impl WatcherHandle {
             protocol_version: 0,
             register_item_error,
         }));
-        let connection = connection::Builder::session()?
+        let connection = connection::Builder::session()
             .method_timeout(DEFAULT_TIMEOUT)
             .serve_at(
                 WATCHER_PATH,
                 MockWatcher {
                     state: state.clone(),
                 },
-            )?
+            )
             .build()
             .await?;
         connection.request_name(WATCHER_NAME).await?;
@@ -376,7 +376,7 @@ pub async fn status_notifier_item_protocol() {
 
         let (sni_iface, sni_changed, sni_invalidated): (
             String,
-            HashMap<String, OwnedValue>,
+            HashMap<String, OwnedVariant>,
             Vec<String>,
         ) = message_body(sni_properties_changed.wait(DEFAULT_TIMEOUT));
         assert_eq!(sni_iface, SNI_INTERFACE);
@@ -392,7 +392,7 @@ pub async fn status_notifier_item_protocol() {
 
         let (menu_iface, menu_changed, menu_invalidated): (
             String,
-            HashMap<String, OwnedValue>,
+            HashMap<String, OwnedVariant>,
             Vec<String>,
         ) = message_body(menu_properties_changed.wait(DEFAULT_TIMEOUT));
         assert_eq!(menu_iface, MENU_INTERFACE);
@@ -514,7 +514,7 @@ pub async fn dbusmenu_protocol() {
         .expect("tray should still be alive for updates");
     with_blocking(move || {
         let (updated_props, removed_props): (
-            Vec<(i32, HashMap<String, OwnedValue>)>,
+            Vec<(i32, HashMap<String, OwnedVariant>)>,
             Vec<(i32, Vec<String>)>,
         ) = message_body(items_properties_updated.wait(DEFAULT_TIMEOUT));
         assert!(removed_props.is_empty());

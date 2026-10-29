@@ -7,8 +7,8 @@ use arc_swap::ArcSwapOption;
 use crossbeam_queue::SegQueue;
 use serde::Serialize;
 use zbus::names::InterfaceName;
-use zbus::zvariant::{self, ObjectPath, OwnedValue, Type, Value};
 use zbus::{object_server::SignalEmitter, Connection};
+use zbus::{ObjectPath, OwnedVariant, Type, Variant};
 
 use crate::compat::task_local;
 use crate::service::{Service, State};
@@ -388,17 +388,17 @@ impl<T: Tray> StatusNotifierItem<T> {
 #[derive(Debug, Default, Type, Serialize, PartialEq)]
 pub struct Layout {
     pub id: i32,
-    pub properties: HashMap<Cow<'static, str>, OwnedValue>,
-    // The construction of OwnedValue is recursive
+    pub properties: HashMap<Cow<'static, str>, OwnedVariant>,
+    // The construction of OwnedVariant is recursive
     // which may overflow menu with very depth submenu
-    // so we use Value<'static> here
-    pub children: Vec<Value<'static>>,
+    // so we use Variant<'static> here
+    pub children: Vec<Variant<'static>>,
 }
 
-impl TryFrom<Value<'static>> for Layout {
-    type Error = zvariant::Error;
-    fn try_from(value: Value<'static>) -> zvariant::Result<Self> {
-        let mut fields = zvariant::Structure::try_from(value)?.into_fields();
+impl TryFrom<Variant<'static>> for Layout {
+    type Error = zbus::Error;
+    fn try_from(value: Variant<'static>) -> zbus::Result<Self> {
+        let mut fields = zbus::Structure::try_from(value)?.into_fields();
         Ok(Self {
             id: fields.remove(0).downcast()?,
             properties: fields.remove(0).downcast::<ItemPropsValueHelper>()?.0,
@@ -407,17 +407,17 @@ impl TryFrom<Value<'static>> for Layout {
     }
 }
 
-impl TryFrom<OwnedValue> for Layout {
-    type Error = zvariant::Error;
-    fn try_from(value: OwnedValue) -> zvariant::Result<Self> {
-        <Self as TryFrom<Value<'static>>>::try_from(value.into())
+impl TryFrom<OwnedVariant> for Layout {
+    type Error = zbus::Error;
+    fn try_from(value: OwnedVariant) -> zbus::Result<Self> {
+        <Self as TryFrom<Variant<'static>>>::try_from(value.into())
     }
 }
 
-impl<'a> From<Layout> for Value<'a> {
+impl<'a> From<Layout> for Variant<'a> {
     fn from(s: Layout) -> Self {
-        Value::from(
-            zvariant::StructureBuilder::new()
+        Variant::from(
+            zbus::Structure::builder()
                 .add_field(s.id)
                 .add_field(s.properties)
                 .add_field(s.children)
@@ -427,28 +427,32 @@ impl<'a> From<Layout> for Value<'a> {
     }
 }
 
-impl From<Layout> for OwnedValue {
+impl From<Layout> for OwnedVariant {
     fn from(s: Layout) -> Self {
-        Value::from(s)
+        Variant::from(s)
             .try_into_owned()
             .expect("Layout should not contains any fd")
     }
 }
 
-/// FIXME: remove this after `From<zbus::zvariant::Value<'_>>` is implemented for `Cow<'_, str>`
-struct ItemPropsValueHelper(HashMap<Cow<'static, str>, OwnedValue>);
+/// FIXME: remove this after `From<zbus::Variant<'_>>` is implemented for `Cow<'_, str>`
+struct ItemPropsValueHelper(HashMap<Cow<'static, str>, OwnedVariant>);
 
-impl<'a> TryFrom<Value<'a>> for ItemPropsValueHelper {
-    type Error = zvariant::Error;
+impl<'a> TryFrom<Variant<'a>> for ItemPropsValueHelper {
+    type Error = zbus::Error;
 
-    fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
-        if let Value::Dict(v) = value {
+    fn try_from(value: Variant<'a>) -> Result<Self, Self::Error> {
+        if let Variant::Dict(v) = value {
             v.into_iter()
                 .map(|(key, value)| {
-                    let key = String::try_from(if let Value::Value(v) = key { *v } else { key })
-                        .map(Into::into)?;
+                    let key = String::try_from(if let Variant::Variant(v) = key {
+                        *v
+                    } else {
+                        key
+                    })
+                    .map(Into::into)?;
 
-                    let value = OwnedValue::try_from(if let Value::Value(v) = value {
+                    let value = OwnedVariant::try_from(if let Variant::Variant(v) = value {
                         *v
                     } else {
                         value
@@ -456,7 +460,7 @@ impl<'a> TryFrom<Value<'a>> for ItemPropsValueHelper {
 
                     Ok((key, value))
                 })
-                .collect::<Result<HashMap<Cow<'static, str>, OwnedValue>, _>>()
+                .collect::<Result<HashMap<Cow<'static, str>, OwnedVariant>, _>>()
                 .map(ItemPropsValueHelper)
         } else {
             Err(Self::Error::IncorrectType)
@@ -502,7 +506,7 @@ impl<T: Tray> DbusMenu<T> {
         &self,
         ids: Vec<i32>,
         property_names: Vec<String>,
-    ) -> zbus::fdo::Result<Vec<(i32, HashMap<Cow<'static, str>, OwnedValue>)>> {
+    ) -> zbus::fdo::Result<Vec<(i32, HashMap<Cow<'static, str>, OwnedVariant>)>> {
         self.0
             .lock_state(false, async |state| {
                 if ids.is_empty() {
@@ -521,7 +525,7 @@ impl<T: Tray> DbusMenu<T> {
             .await
     }
 
-    async fn get_property(&self, id: i32, name: String) -> zbus::fdo::Result<OwnedValue> {
+    async fn get_property(&self, id: i32, name: String) -> zbus::fdo::Result<OwnedVariant> {
         self.0
             .lock_state(false, async |state| {
                 state
@@ -541,7 +545,7 @@ impl<T: Tray> DbusMenu<T> {
         #[zbus(connection)] conn: &Connection,
         id: i32,
         event_id: String,
-        data: OwnedValue,
+        data: OwnedVariant,
         timestamp: u32,
     ) -> zbus::fdo::Result<()> {
         self.0
@@ -560,7 +564,7 @@ impl<T: Tray> DbusMenu<T> {
     async fn event_group(
         &self,
         #[zbus(connection)] conn: &Connection,
-        events: Vec<(i32, String, OwnedValue, u32)>,
+        events: Vec<(i32, String, OwnedVariant, u32)>,
     ) -> zbus::fdo::Result<Vec<i32>> {
         if events.is_empty() {
             return Err(zbus::fdo::Error::InvalidArgs("Empty events".into()));
@@ -687,7 +691,7 @@ impl<T: Tray> DbusMenu<T> {
     #[zbus(signal)]
     pub async fn items_properties_updated(
         ctxt: &SignalEmitter<'_>,
-        updated_props: Vec<(i32, HashMap<Cow<'static, str>, OwnedValue>)>,
+        updated_props: Vec<(i32, HashMap<Cow<'static, str>, OwnedVariant>)>,
         removed_props: Vec<(i32, Vec<Cow<'static, str>>)>,
     ) -> zbus::Result<()>;
 

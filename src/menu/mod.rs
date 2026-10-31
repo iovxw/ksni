@@ -109,6 +109,10 @@ pub struct StandardItem<T> {
     /// the last character in the string) indicates that the following
     /// character is the access key.
     pub label: String,
+    /// Description of the item for assistive technology such as screen
+    /// readers, sent as the DBusMenu `accessible-desc` property.
+    /// An empty string (the default) sends nothing.
+    pub accessible_desc: String,
     /// Whether the item can be activated or not.
     pub enabled: bool,
     /// True if the item is visible in the menu.
@@ -152,6 +156,7 @@ impl<T> fmt::Debug for StandardItem<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StandardItem")
             .field("label", &self.label)
+            .field("accessible_desc", &self.accessible_desc)
             .field("enabled", &self.enabled)
             .field("visible", &self.visible)
             .field("icon_name", &self.icon_name)
@@ -170,6 +175,7 @@ impl<T> Default for StandardItem<T> {
     fn default() -> Self {
         StandardItem {
             label: String::default(),
+            accessible_desc: String::default(),
             enabled: true,
             visible: true,
             icon_name: String::default(),
@@ -193,6 +199,7 @@ impl<T: 'static> From<StandardItem<T>> for RawMenuItem<T> {
         Self {
             r#type: ItemType::Standard,
             label: item.label,
+            accessible_desc: item.accessible_desc,
             enabled: item.enabled,
             visible: item.visible,
             icon_name: item.icon_name,
@@ -217,6 +224,10 @@ pub struct SubMenu<T> {
     /// the last character in the string) indicates that the following
     /// character is the access key.
     pub label: String,
+    /// Description of the item for assistive technology such as screen
+    /// readers, sent as the DBusMenu `accessible-desc` property.
+    /// An empty string (the default) sends nothing.
+    pub accessible_desc: String,
     /// Whether the item can be activated or not.
     pub enabled: bool,
     /// True if the item is visible in the menu.
@@ -247,6 +258,7 @@ impl<T> fmt::Debug for SubMenu<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("SubMenu")
             .field("label", &self.label)
+            .field("accessible_desc", &self.accessible_desc)
             .field("enabled", &self.enabled)
             .field("visible", &self.visible)
             .field("icon_name", &self.icon_name)
@@ -262,6 +274,7 @@ impl<T> Default for SubMenu<T> {
     fn default() -> Self {
         Self {
             label: String::default(),
+            accessible_desc: String::default(),
             enabled: true,
             visible: true,
             icon_name: String::default(),
@@ -284,6 +297,7 @@ impl<T> From<SubMenu<T>> for RawMenuItem<T> {
         Self {
             r#type: ItemType::Standard,
             label: item.label,
+            accessible_desc: item.accessible_desc,
             enabled: item.enabled,
             visible: item.visible,
             icon_name: item.icon_name,
@@ -306,6 +320,10 @@ pub struct CheckmarkItem<T> {
     /// the last character in the string) indicates that the following
     /// character is the access key.
     pub label: String,
+    /// Description of the item for assistive technology such as screen
+    /// readers, sent as the DBusMenu `accessible-desc` property.
+    /// An empty string (the default) sends nothing.
+    pub accessible_desc: String,
     /// Whether the item can be activated or not.
     pub enabled: bool,
     /// True if the item is visible in the menu.
@@ -370,6 +388,7 @@ impl<T> fmt::Debug for CheckmarkItem<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("CheckmarkItem")
             .field("label", &self.label)
+            .field("accessible_desc", &self.accessible_desc)
             .field("enabled", &self.enabled)
             .field("visible", &self.visible)
             .field("checked", &self.checked)
@@ -389,6 +408,7 @@ impl<T> Default for CheckmarkItem<T> {
     fn default() -> Self {
         CheckmarkItem {
             label: String::default(),
+            accessible_desc: String::default(),
             enabled: true,
             visible: true,
             checked: false,
@@ -413,6 +433,7 @@ impl<T: 'static> From<CheckmarkItem<T>> for RawMenuItem<T> {
         Self {
             r#type: ItemType::Standard,
             label: item.label,
+            accessible_desc: item.accessible_desc,
             enabled: item.enabled,
             visible: item.visible,
             icon_name: item.icon_name,
@@ -571,6 +592,8 @@ pub(crate) struct RawMenuItem<T> {
     /// the last character in the string) indicates that the following
     /// character is the access key.
     label: String,
+    /// Description of the item for assistive technology (`accessible-desc`).
+    accessible_desc: String,
     /// Whether the item can be activated or not.
     enabled: bool,
     /// True if the item is visible in the menu.
@@ -666,6 +689,15 @@ impl<T> RawMenuItem<T> {
             label,
             (|r: String| -> Str { r.into() })
         );
+        if_not_default_then_insert!(
+            properties,
+            self,
+            default,
+            property_filter,
+            accessible_desc,
+            "accessible-desc",
+            (|r: String| -> Str { r.into() })
+        );
         if_not_default_then_insert!(properties, self, default, property_filter, enabled);
         if_not_default_then_insert!(properties, self, default, property_filter, visible);
         if_not_default_then_insert!(
@@ -750,6 +782,16 @@ impl<T> RawMenuItem<T> {
                 updated_props.insert(
                     "label".into(),
                     <OwnedValue as From<Str>>::from(other.label.clone().into()),
+                );
+            }
+        }
+        if self.accessible_desc != other.accessible_desc {
+            if other.accessible_desc == default.accessible_desc {
+                removed_props.push("accessible-desc".into());
+            } else {
+                updated_props.insert(
+                    "accessible-desc".into(),
+                    <OwnedValue as From<Str>>::from(other.accessible_desc.clone().into()),
                 );
             }
         }
@@ -842,6 +884,7 @@ impl<T> Default for RawMenuItem<T> {
         RawMenuItem {
             r#type: ItemType::Standard,
             label: String::default(),
+            accessible_desc: String::default(),
             enabled: true,
             visible: true,
             icon_name: String::default(),
@@ -1057,6 +1100,58 @@ pub(crate) fn menu_flatten<T: 'static>(
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_accessible_desc_property() {
+        fn raw(desc: &str) -> RawMenuItem<()> {
+            StandardItem {
+                label: "Open".into(),
+                accessible_desc: desc.into(),
+                ..Default::default()
+            }
+            .into()
+        }
+        let desc = |props: &HashMap<Cow<'static, str>, OwnedValue>| {
+            props
+                .get("accessible-desc")
+                .map(|v| String::try_from(v.try_clone().unwrap()).unwrap())
+        };
+
+        // Empty (the default) sends nothing, so existing menus are unchanged.
+        assert_eq!(desc(&raw("").to_dbus_map(&[], false)), None);
+        let props = raw("Opens the window").to_dbus_map(&[], false);
+        assert_eq!(desc(&props).as_deref(), Some("Opens the window"));
+        // A property filter that leaves it out drops it.
+        assert_eq!(
+            desc(&raw("Opens the window").to_dbus_map(&["label".into()], false)),
+            None
+        );
+
+        // Changing it is reported as an update; clearing it as a removal.
+        let (updated, removed) = raw("a").diff(&raw("b")).expect("changed");
+        assert_eq!(desc(&updated).as_deref(), Some("b"));
+        assert!(removed.is_empty());
+        let (updated, removed) = raw("a").diff(&raw("")).expect("cleared");
+        assert!(updated.is_empty());
+        assert_eq!(removed, vec![Cow::from("accessible-desc")]);
+        assert!(raw("a").diff(&raw("a")).is_none());
+
+        let check: RawMenuItem<()> = CheckmarkItem {
+            accessible_desc: "Current choice".into(),
+            ..Default::default()
+        }
+        .into();
+        assert_eq!(
+            desc(&check.to_dbus_map(&[], false)).as_deref(),
+            Some("Current choice")
+        );
+        let sub: RawMenuItem<()> = SubMenu {
+            accessible_desc: "More".into(),
+            ..Default::default()
+        }
+        .into();
+        assert_eq!(desc(&sub.to_dbus_map(&[], true)).as_deref(), Some("More"));
+    }
 
     #[test]
     fn test_enums() {

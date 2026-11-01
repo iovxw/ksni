@@ -46,8 +46,9 @@ futures-channel = { version = "0.3", optional = true }
 task-local = { version = "0.1", optional = true }
 
 [dev-dependencies]
-# zbus 5's tokio feature switched on `process` for us; zbus 6 does not.
-tokio = { version = "1", features = ["process"] }
+# zbus 5's tokio feature switched on `process` and `rt-multi-thread` for us;
+# zbus 6 does not.
+tokio = { version = "1", features = ["process", "rt-multi-thread"] }
 futures-executor = "0.3"
 smol = "2"
 smol-macros = "0.1"

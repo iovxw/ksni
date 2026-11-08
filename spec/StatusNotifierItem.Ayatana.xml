@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ayatana extensions to org.kde.StatusNotifierItem.
+     Derived from https://github.com/AyatanaIndicators/libayatana-appindicator-glib/blob/4fa65d8ce1a7f1a1f22cefe3d5bdd47667f188d0/src/notification-item.xml -->
+<node name="/StatusNotifierItem">
+    <interface name="org.kde.StatusNotifierItem">
+        <property name="IconAccessibleDesc" type="s" access="read" />
+        <property name="AttentionAccessibleDesc" type="s" access="read" />
+        <property name="XAyatanaLabel" type="s" access="read" />
+        <property name="XAyatanaLabelGuide" type="s" access="read" />
+        <property name="XAyatanaOrderingIndex" type="u" access="read" />
+        <method name="XAyatanaSecondaryActivate">
+            <arg type="u" name="timestamp" direction="in" />
+        </method>
+        <signal name="NewIconThemePath">
+            <arg type="s" name="icon_theme_path" direction="out" />
+        </signal>
+        <signal name="XAyatanaNewLabel">
+            <arg type="s" name="label" direction="out" />
+            <arg type="s" name="guide" direction="out" />
+        </signal>
+    </interface>
+</node>

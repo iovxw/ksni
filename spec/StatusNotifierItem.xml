@@ -49,6 +49,9 @@
       <annotation name="org.qtproject.QtDBus.QtTypeName" value="KDbusToolTipStruct"/>
     </property>
 
+    <method name="ProvideXdgActivationToken">
+        <arg name="token" type="s" direction="in"/>
+    </method>
 
     <!-- interaction: the systemtray wants the application to do something -->
     <method name="ContextMenu">
@@ -67,10 +70,6 @@
         <arg name="y" type="i" direction="in"/>
     </method>
 
-    <method name="ProvideXdgActivationToken">
-        <arg name="token" type="s" direction="in"/>
-    </method>
-
     <method name="Scroll">
       <arg name="delta" type="i" direction="in"/>
       <arg name="orientation" type="s" direction="in"/>
@@ -87,6 +86,9 @@
     </signal>
 
     <signal name="NewOverlayIcon">
+    </signal>
+
+    <signal name="NewMenu">
     </signal>
 
     <signal name="NewToolTip">

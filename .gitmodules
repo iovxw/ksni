@@ -10,3 +10,6 @@
 [submodule "reference/snapd"]
 	path = reference/snapd
 	url = https://github.com/canonical/snapd
+[submodule "reference/kstatusnotifieritem"]
+	path = reference/kstatusnotifieritem
+	url = https://invent.kde.org/frameworks/kstatusnotifieritem

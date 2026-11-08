@@ -7,3 +7,6 @@
 [submodule "reference/libdbusmenu"]
 	path = reference/libdbusmenu
 	url = https://git.launchpad.net/libdbusmenu
+[submodule "reference/snapd"]
+	path = reference/snapd
+	url = https://github.com/canonical/snapd

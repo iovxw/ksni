@@ -271,8 +271,17 @@ impl<T: Tray> State<T> {
         }
 
         if self.icon_theme_path_changed() {
-            sni_changed.insert("IconThemePath", self.get_icon_theme_path().into());
-            menu_changed.insert("IconThemePath", vec![self.get_icon_theme_path()].into());
+            let icon_theme_path = self.get_icon_theme_path();
+            // `NewIconThemePath` is a non-standard Ayatana extension to the KDE
+            // StatusNotifierItem spec. Emit it on a best-effort for hosts that
+            // support it. `PropertiesChanged` covers the rest.
+            StatusNotifierItem::<T>::new_icon_theme_path(
+                sni_obj.signal_emitter(),
+                &icon_theme_path,
+            )
+            .await?;
+            sni_changed.insert("IconThemePath", icon_theme_path.clone().into());
+            menu_changed.insert("IconThemePath", vec![icon_theme_path].into());
         }
 
         if self.category_changed() {

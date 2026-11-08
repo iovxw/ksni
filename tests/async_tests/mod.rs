@@ -321,6 +321,7 @@ pub async fn status_notifier_item_protocol() {
         new_attention,
         new_tool_tip,
         new_status,
+        new_icon_theme_path,
         sni_properties_changed,
         menu_properties_changed,
     ) = with_blocking(move || {
@@ -341,6 +342,12 @@ pub async fn status_notifier_item_protocol() {
             ),
             spawn_signal_waiter(&waiters_service_name, SNI_PATH, SNI_INTERFACE, "NewToolTip"),
             spawn_signal_waiter(&waiters_service_name, SNI_PATH, SNI_INTERFACE, "NewStatus"),
+            spawn_signal_waiter(
+                &waiters_service_name,
+                SNI_PATH,
+                SNI_INTERFACE,
+                "NewIconThemePath",
+            ),
             spawn_filtered_signal_waiter(
                 &waiters_service_name,
                 SNI_PATH,
@@ -373,6 +380,8 @@ pub async fn status_notifier_item_protocol() {
         let _: () = message_body(new_tool_tip.wait(DEFAULT_TIMEOUT));
         let (status,): (String,) = message_body(new_status.wait(DEFAULT_TIMEOUT));
         assert_eq!(status, "NeedsAttention");
+        let (icon_theme_path,): (String,) = message_body(new_icon_theme_path.wait(DEFAULT_TIMEOUT));
+        assert_eq!(icon_theme_path, "/tmp/mock-icons-updated");
 
         let (sni_iface, sni_changed, sni_invalidated): (
             String,

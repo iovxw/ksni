@@ -391,6 +391,16 @@ impl<T: Tray> StatusNotifierItem<T> {
 
     #[zbus(signal)]
     pub async fn new_status(ctxt: &SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
+
+    // `NewIconThemePath` is a non-standard Ayatana extension, not part of the
+    // original KDE StatusNotifierItem spec. We emit it on a best-effort basis
+    // for hosts that understand it (for example GNOME's AppIndicator
+    // extension)
+    #[zbus(signal)]
+    pub async fn new_icon_theme_path(
+        ctxt: &SignalEmitter<'_>,
+        icon_theme_path: &str,
+    ) -> zbus::Result<()>;
 }
 
 #[derive(Debug, Default, Type, Serialize, PartialEq)]

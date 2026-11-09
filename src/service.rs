@@ -226,7 +226,7 @@ impl<T: Tray> Service<T> {
         }
     }
 
-    /// If `may_open_window`, will consume a XDG Activation Token. 
+    /// If `may_open_window`, will consume a XDG Activation Token.
     /// This function should only be called once in one event
     pub async fn lock_state<F, R>(&self, may_open_window: bool, f: F) -> R
     where

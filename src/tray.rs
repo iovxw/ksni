@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use zbus::zvariant::{Type, Value};
+use zbus::{Type, Variant};
 
 /// Represent the horizontal or vertical orientation of the scroll request
 // In org.freedesktop.StatusNotifierItem it's "horizontal" and "vertical"
@@ -10,7 +10,7 @@ use zbus::zvariant::{Type, Value};
 // KDE:
 // https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L99-L115
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Type, Deserialize)]
-#[zvariant(signature = "s")]
+#[zbus(signature = "s")]
 pub enum Orientation {
     #[serde(alias = "horizontal")]
     Horizontal,
@@ -20,7 +20,7 @@ pub enum Orientation {
 
 /// Category of this item.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Type, Serialize)]
-#[zvariant(signature = "s")]
+#[zbus(signature = "s")]
 pub enum Category {
     /// The item describes the status of a generic application, for instance
     /// the current state of a media player. In the case where the category of
@@ -40,9 +40,9 @@ pub enum Category {
     Hardware,
 }
 
-// The Value dervie macro can only handle `dict` or `a{sv}` values
+// The Variant dervie macro can only handle `dict` or `a{sv}` values
 // so we impl it manually
-impl From<Category> for Value<'_> {
+impl From<Category> for Variant<'_> {
     fn from(value: Category) -> Self {
         value.to_string().into()
     }
@@ -56,7 +56,7 @@ impl fmt::Display for Category {
 
 /// Status of this item or of the associated application.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Type, Serialize)]
-#[zvariant(signature = "s")]
+#[zbus(signature = "s")]
 pub enum Status {
     /// The item doesn't convey important information to the user, it can be
     /// considered an "idle" status and is likely that visualizations will chose
@@ -72,9 +72,9 @@ pub enum Status {
     NeedsAttention,
 }
 
-// The Value dervie macro can only handle `dict` or `a{sv}` values
+// The Variant dervie macro can only handle `dict` or `a{sv}` values
 // so we impl it manually
-impl From<Status> for Value<'_> {
+impl From<Status> for Variant<'_> {
     fn from(value: Status) -> Self {
         value.to_string().into()
     }
@@ -103,7 +103,7 @@ impl Status {
 /// See [`Tray::tool_tip`]
 ///
 /// [`Tray::tool_tip`]: crate::Tray::tool_tip
-#[derive(Clone, Debug, Default, Hash, Type, Value, Serialize)]
+#[derive(Clone, Debug, Default, Hash, Type, Variant, Serialize)]
 pub struct ToolTip {
     /// Freedesktop-compliant name for an icon.
     pub icon_name: String,
@@ -147,7 +147,7 @@ pub struct ToolTip {
 /// ```
 ///
 /// [image crate]: https://crates.io/crates/image/
-#[derive(Clone, Debug, Hash, Type, Value, Serialize)]
+#[derive(Clone, Debug, Hash, Type, Variant, Serialize)]
 pub struct Icon {
     pub width: i32,
     pub height: i32,

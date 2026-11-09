@@ -3,7 +3,7 @@ name = "ksni"
 version = "0.3.7"
 authors = ["iovxw <iovxw@outlook.com>"]
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 description = """
 A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
 """
@@ -25,7 +25,7 @@ async-io = [
     "dep:futures-lite",
     "dep:futures-channel",
     "dep:task-local",
-    "zbus/async-io",
+    "zbus/default-rt",
 ]
 
 [dependencies]
@@ -33,7 +33,7 @@ arc-swap = "1"
 crossbeam-queue = "0.3"
 pastey = "0.2"
 futures-util = "0.3"
-zbus = { version = "5", default-features = false }
+zbus = { version = "6", default-features = false, features = ["proxy", "service"] }
 serde = { version = "1", features = ["derive"] }
 
 tokio = { version = "1", features = ["rt", "macros"], optional = true }
@@ -46,11 +46,15 @@ futures-channel = { version = "0.3", optional = true }
 task-local = { version = "0.1", optional = true }
 
 [dev-dependencies]
+# zbus 5's tokio feature switched on `process` and `rt-multi-thread` for us;
+# zbus 6 does not.
+tokio = { version = "1", features = ["process", "rt-multi-thread"] }
+futures-executor = "0.3"
 smol = "2"
 smol-macros = "0.1"
 macro_rules_attribute = "0.2"
 image = "0.25"
-zbus = { version = "5", default-features = false, features = ["blocking-api"] }
+zbus = { version = "6", default-features = false, features = ["default-rt", "proxy"] }
 ashpd = { version = "0.13", default-features = false, features = ["async-io"]}
 chrono = "0.4"
 gtk4 = "0.11"

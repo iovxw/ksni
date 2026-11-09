@@ -9,10 +9,10 @@ use std::sync::Arc;
 use futures_util::{future::Either, StreamExt};
 use pastey::paste;
 use zbus::fdo::DBusProxy;
-use zbus::zvariant::{OwnedValue, Value};
 use zbus::Connection;
+use zbus::{OwnedVariant, Variant};
 
-use crate::compat::{self, mpsc, select, Mutex};
+use crate::compat::{mpsc, select, Mutex};
 use crate::dbus_interface::{
     Context, DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE,
     MENU_PATH, SNI_INTERFACE, SNI_PATH,
@@ -32,28 +32,13 @@ pub(crate) async fn run<T: Tray>(
     let menu_obj = DbusMenu::new(service.clone());
     let Service { state, .. } = service;
 
-    // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
+    // zbus 6 builders defer every error, an invalid path included, to `build()`
     let conn = zbus::connection::Builder::session()
-        .map_err(|e| Error::Dbus(e))?
-        .internal_executor(false) // avoid extra thread when async-io enabled
         .serve_at(SNI_PATH, sni_obj)
-        .expect("SNI_PATH should be valid")
         .serve_at(MENU_PATH, menu_obj)
-        .expect("MENU_PATH should be valid")
         .build()
         .await
         .map_err(|e| Error::Dbus(e))?;
-
-    if cfg!(feature = "async-io") {
-        let executor = conn.executor().clone();
-        // must start the executor before register_status_notifier_item
-        compat::spawn(async move {
-            // won't empty until conn stopped
-            while !executor.is_empty() {
-                executor.tick().await;
-            }
-        });
-    }
 
     let name = if own_name {
         let name = format!(
@@ -226,7 +211,7 @@ impl<T: Tray> Service<T> {
         }
     }
 
-    /// If `may_open_window`, will consume a XDG Activation Token. 
+    /// If `may_open_window`, will consume a XDG Activation Token.
     /// This function should only be called once in one event
     pub async fn lock_state<F, R>(&self, may_open_window: bool, f: F) -> R
     where
@@ -254,8 +239,8 @@ impl<T: Tray> State<T> {
             .interface::<_, DbusMenu<T>>(MENU_PATH)
             .await?;
 
-        let mut sni_changed: HashMap<&str, Value> = HashMap::new();
-        let mut menu_changed: HashMap<&str, Value> = HashMap::new();
+        let mut sni_changed: HashMap<&str, Variant> = HashMap::new();
+        let mut menu_changed: HashMap<&str, Variant> = HashMap::new();
 
         if self.text_direction_changed() {
             menu_changed.insert("TextDirection", self.get_text_direction().into());
@@ -459,7 +444,7 @@ impl<T: Tray> State<T> {
         let root = self.id2index(parent_id)?;
 
         let mut stack = vec![(root, 0, false)];
-        let mut pending_children: Vec<Value<'static>> = Vec::new();
+        let mut pending_children: Vec<Variant<'static>> = Vec::new();
 
         while let Some((index, depth, all_childs_processed)) = stack.pop() {
             let (item, child_idxs) = &self.flattened_menu[index];
@@ -502,7 +487,7 @@ impl<T: Tray> State<T> {
     pub fn get_all_item(
         &self,
         property_filter: &[String],
-    ) -> Vec<(i32, HashMap<Cow<'static, str>, OwnedValue>)> {
+    ) -> Vec<(i32, HashMap<Cow<'static, str>, OwnedVariant>)> {
         self.flattened_menu
             .iter()
             .enumerate()
@@ -519,7 +504,7 @@ impl<T: Tray> State<T> {
         &self,
         id: i32,
         property_filter: &[String],
-    ) -> Option<HashMap<Cow<'static, str>, OwnedValue>> {
+    ) -> Option<HashMap<Cow<'static, str>, OwnedVariant>> {
         self.id2index(id).map(|index| {
             let (item, children) = &self.flattened_menu[index];
             item.to_dbus_map(property_filter, !children.is_empty())
@@ -533,7 +518,7 @@ impl<T: Tray> State<T> {
         do_update: bool,
         id: i32,
         event_id: &str,
-        _data: OwnedValue,
+        _data: OwnedVariant,
         _timestamp: u32,
     ) -> zbus::fdo::Result<bool> {
         let Some(index) = self.id2index(id) else {
@@ -687,7 +672,7 @@ mod tests {
     use macro_rules_attribute::apply;
     #[cfg(feature = "async-io")]
     use smol_macros::test;
-    use zbus::zvariant::OwnedValue;
+    use zbus::OwnedVariant;
 
     #[derive(Clone, Default)]
     struct TestTray;
@@ -771,7 +756,7 @@ mod tests {
                 const { repetition_utils!(@count $($key),*) }
             );
             $(
-                let value = zbus::zvariant::Value::from($value).try_into_owned().unwrap();
+                let value = zbus::Variant::from($value).try_into_owned().unwrap();
                 map.insert($key.into(), value);
             )*
             map
@@ -1837,7 +1822,7 @@ mod tests {
         let mut service = service.lock().await;
 
         let err = service
-            .event(&conn, false, 0, "clicked", OwnedValue::from(0_u8), 0)
+            .event(&conn, false, 0, "clicked", OwnedVariant::from(0_u8), 0)
             .await
             .expect_err("root menu clicked should return InvalidArgs");
 

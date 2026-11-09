@@ -6,9 +6,11 @@ use ksni::menu::{
     CheckmarkItem, Disposition, RadioGroup, RadioItem, StandardItem, SubMenu, TextDirection,
 };
 use ksni::{Category, Icon, MenuItem, Status, ToolTip};
-use zbus::blocking::{connection, Connection, Proxy};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+pub mod blocking_zbus;
+
+use blocking_zbus::{connection, Connection, Proxy};
 use zbus::Message;
+use zbus::{OwnedObjectPath, OwnedVariant};
 
 pub const WATCHER_NAME: &str = "org.kde.StatusNotifierWatcher";
 pub const WATCHER_PATH: &str = "/StatusNotifierWatcher";
@@ -36,7 +38,7 @@ macro_rules! properties {
             const { $crate::common::repetition_utils!(@count $($key),*) }
         );
         $(
-            let value = zbus::zvariant::Value::from($value).try_into_owned().unwrap();
+            let value = zbus::Variant::from($value).try_into_owned().unwrap();
             map.insert($key.into(), value);
         )*
         map
@@ -413,12 +415,12 @@ fn icon(seed: u8) -> Icon {
     }
 }
 
-pub type LayoutTuple = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
+pub type LayoutTuple = (i32, HashMap<String, OwnedVariant>, Vec<OwnedVariant>);
 
 #[derive(Clone, Debug)]
 pub struct LayoutNode {
     pub id: i32,
-    pub properties: HashMap<String, OwnedValue>,
+    pub properties: HashMap<String, OwnedVariant>,
     pub children: Vec<LayoutNode>,
 }
 
@@ -430,7 +432,7 @@ pub fn decode_layout(layout: LayoutTuple) -> LayoutNode {
     }
 }
 
-pub fn layout_from_value(value: OwnedValue) -> LayoutNode {
+pub fn layout_from_value(value: OwnedVariant) -> LayoutNode {
     let layout: LayoutTuple = value
         .try_into()
         .expect("value should decode into a layout tuple");
@@ -455,7 +457,6 @@ pub fn find_layout_by_label<'a>(layout: &'a LayoutNode, label: &str) -> Option<&
 
 pub fn session_connection() -> Connection {
     connection::Builder::session()
-        .expect("session bus builder should be available")
         .method_timeout(DEFAULT_TIMEOUT)
         .build()
         .expect("session bus connection should be available")
@@ -573,7 +574,7 @@ pub fn spawn_filtered_signal_waiter(
 
 pub fn message_body<T>(message: Message) -> T
 where
-    T: serde::de::DeserializeOwned + zbus::zvariant::Type,
+    T: serde::de::DeserializeOwned + zbus::Type,
 {
     message
         .body()
@@ -749,7 +750,7 @@ pub fn xdg_activation_token_assertions(
         &(
             standard.id,
             "clicked".to_string(),
-            OwnedValue::from(0_u8),
+            OwnedVariant::from(0_u8),
             0_u32,
         ),
     )
@@ -803,7 +804,7 @@ pub fn xdg_activation_token_group_assertions(
     let standard = find_layout_by_label(&layout, "Open").expect("standard item should exist");
 
     let menu_event =
-        |id: i32, event_id: &str| (id, event_id.to_string(), OwnedValue::from(0_u8), 0_u32);
+        |id: i32, event_id: &str| (id, event_id.to_string(), OwnedVariant::from(0_u8), 0_u32);
 
     // A group without "clicked" (submenu opened/closed) must not consume a
     // token: the queued token survives and is attached to the next click.
@@ -952,7 +953,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
     let one_submenu = find_layout_by_label(&layout_one, "More").expect("submenu should exist");
     assert!(one_submenu.children.is_empty());
 
-    let group_all: Vec<(i32, HashMap<String, OwnedValue>)> = proxy
+    let group_all: Vec<(i32, HashMap<String, OwnedVariant>)> = proxy
         .call(
             "GetGroupProperties",
             &(Vec::<i32>::new(), Vec::<String>::new()),
@@ -965,7 +966,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
         properties! { "children-display" => "submenu" }
     );
 
-    let filtered: Vec<(i32, HashMap<String, OwnedValue>)> = proxy
+    let filtered: Vec<(i32, HashMap<String, OwnedVariant>)> = proxy
         .call(
             "GetGroupProperties",
             &(vec![standard.id], vec!["label".to_string()]),
@@ -974,7 +975,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].1, properties! { "label" => "Open" });
 
-    let label_value: OwnedValue = proxy
+    let label_value: OwnedVariant = proxy
         .call("GetProperty", &(standard.id, "label".to_string()))
         .unwrap();
     let label_value: String = label_value.try_into().unwrap();
@@ -982,14 +983,14 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
     assert!(format!(
         "{:?}",
         proxy
-            .call::<_, _, OwnedValue>("GetProperty", &(999_i32, "label".to_string()))
+            .call::<_, _, OwnedVariant>("GetProperty", &(999_i32, "label".to_string()))
             .expect_err("invalid item ids must fail")
     )
     .contains("InvalidArgs"));
     assert!(format!(
         "{:?}",
         proxy
-            .call::<_, _, OwnedValue>("GetProperty", &(standard.id, "missing".to_string()))
+            .call::<_, _, OwnedVariant>("GetProperty", &(standard.id, "missing".to_string()))
             .expect_err("invalid property names must fail")
     )
     .contains("InvalidArgs"));
@@ -1000,7 +1001,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
             &(
                 checkmark.id,
                 "clicked".to_string(),
-                OwnedValue::from(0_u8),
+                OwnedVariant::from(0_u8),
                 0_u32,
             ),
         )
@@ -1015,7 +1016,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
         },
         "checkmark click",
     );
-    let toggle_state: OwnedValue = proxy
+    let toggle_state: OwnedVariant = proxy
         .call("GetProperty", &(checkmark.id, "toggle-state".to_string()))
         .unwrap();
     let toggle_state: i32 = toggle_state.try_into().unwrap();
@@ -1026,7 +1027,12 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
         proxy
             .call::<_, _, ()>(
                 "Event",
-                &(0_i32, "clicked".to_string(), OwnedValue::from(0_u8), 0_u32)
+                &(
+                    0_i32,
+                    "clicked".to_string(),
+                    OwnedVariant::from(0_u8),
+                    0_u32
+                )
             )
             .expect_err("root menu clicks must fail")
     )
@@ -1039,7 +1045,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
                 &(
                     999_i32,
                     "clicked".to_string(),
-                    OwnedValue::from(0_u8),
+                    OwnedVariant::from(0_u8),
                     0_u32
                 )
             )
@@ -1055,7 +1061,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
                 &(
                     standard.id,
                     event_name.to_string(),
-                    OwnedValue::from(0_u8),
+                    OwnedVariant::from(0_u8),
                     0_u32,
                 ),
             )
@@ -1068,7 +1074,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
         proxy
             .call::<_, _, Vec<i32>>(
                 "EventGroup",
-                &(Vec::<(i32, String, OwnedValue, u32)>::new(),)
+                &(Vec::<(i32, String, OwnedVariant, u32)>::new(),)
             )
             .expect_err("empty EventGroup calls must fail")
     )
@@ -1081,13 +1087,13 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
                 (
                     999_i32,
                     "clicked".to_string(),
-                    OwnedValue::from(0_u8),
+                    OwnedVariant::from(0_u8),
                     0_u32,
                 ),
                 (
                     checkmark.id,
                     "clicked".to_string(),
-                    OwnedValue::from(0_u8),
+                    OwnedVariant::from(0_u8),
                     0_u32,
                 ),
             ],),
@@ -1102,7 +1108,7 @@ pub fn dbusmenu_assertions(connection: &Connection, service_name: &str, events: 
                 &(vec![(
                     999_i32,
                     "clicked".to_string(),
-                    OwnedValue::from(0_u8),
+                    OwnedVariant::from(0_u8),
                     0_u32
                 )],),
             )

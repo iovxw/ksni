@@ -20,6 +20,17 @@ pub const MENU_INTERFACE: &str = "com.canonical.dbusmenu";
 pub const PROPERTIES_INTERFACE: &str = "org.freedesktop.DBus.Properties";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// The Ayatana extension properties of `org.kde.StatusNotifierItem`.
+pub const AYATANA_PROPERTIES: [&str; 5] = [
+    "IconAccessibleDesc",
+    "AttentionAccessibleDesc",
+    "XAyatanaLabel",
+    "XAyatanaLabelGuide",
+    "XAyatanaOrderingIndex",
+];
+/// The Ayatana extension signal emitted when the label or its guide changes.
+pub const AYATANA_NEW_LABEL_SIGNAL: &str = "XAyatanaNewLabel";
+
 macro_rules! repetition_utils {
     (@count $($tokens:tt),*) => {{
         [$($crate::common::repetition_utils!(@replace $tokens => ())),*].len()
@@ -139,6 +150,16 @@ pub struct TestTray<const MENU_ON_ACTIVATE: bool> {
     pub attention_movie_name: String,
     pub tool_tip: ToolTip,
     pub text_direction: TextDirection,
+    #[cfg(feature = "ayatana")]
+    pub icon_accessible_desc: String,
+    #[cfg(feature = "ayatana")]
+    pub attention_accessible_desc: String,
+    #[cfg(feature = "ayatana")]
+    pub x_ayatana_label: String,
+    #[cfg(feature = "ayatana")]
+    pub x_ayatana_label_guide: String,
+    #[cfg(feature = "ayatana")]
+    pub x_ayatana_ordering_index: u32,
     pub standard_label: String,
     pub standard_enabled: bool,
     pub standard_visible: bool,
@@ -183,6 +204,16 @@ impl<const MENU_ON_ACTIVATE: bool> TestTray<MENU_ON_ACTIVATE> {
                     description: "Tooltip description".into(),
                 },
                 text_direction: TextDirection::LeftToRight,
+                #[cfg(feature = "ayatana")]
+                icon_accessible_desc: String::new(),
+                #[cfg(feature = "ayatana")]
+                attention_accessible_desc: String::new(),
+                #[cfg(feature = "ayatana")]
+                x_ayatana_label: String::new(),
+                #[cfg(feature = "ayatana")]
+                x_ayatana_label_guide: String::new(),
+                #[cfg(feature = "ayatana")]
+                x_ayatana_ordering_index: 0,
                 standard_label: "Open".into(),
                 standard_enabled: true,
                 standard_visible: true,
@@ -289,6 +320,31 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
 
     fn text_direction(&self) -> TextDirection {
         self.text_direction
+    }
+
+    #[cfg(feature = "ayatana")]
+    fn icon_accessible_desc(&self) -> String {
+        self.icon_accessible_desc.clone()
+    }
+
+    #[cfg(feature = "ayatana")]
+    fn attention_accessible_desc(&self) -> String {
+        self.attention_accessible_desc.clone()
+    }
+
+    #[cfg(feature = "ayatana")]
+    fn x_ayatana_label(&self) -> String {
+        self.x_ayatana_label.clone()
+    }
+
+    #[cfg(feature = "ayatana")]
+    fn x_ayatana_label_guide(&self) -> String {
+        self.x_ayatana_label_guide.clone()
+    }
+
+    #[cfg(feature = "ayatana")]
+    fn x_ayatana_ordering_index(&self) -> u32 {
+        self.x_ayatana_ordering_index
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
@@ -593,6 +649,142 @@ pub fn mutate_sni_properties(tray: &mut TestTray<false>) {
     tray.tool_tip.title = "Updated tooltip".into();
     tray.tool_tip.description = "Updated tooltip description".into();
     tray.text_direction = TextDirection::RightToLeft;
+}
+
+#[cfg(feature = "ayatana")]
+pub fn mutate_ayatana_properties(tray: &mut TestTray<false>) {
+    tray.icon_accessible_desc = "Main icon description".into();
+    tray.attention_accessible_desc = "Attention icon description".into();
+    tray.x_ayatana_label = "42%".into();
+    tray.x_ayatana_label_guide = "100%".into();
+    tray.x_ayatana_ordering_index = 7;
+}
+
+/// Asserts the Ayatana members are exported and expose the [`ksni::Tray`]
+/// defaults while the tray has not been mutated.
+#[cfg(feature = "ayatana")]
+pub fn ayatana_property_assertions(connection: &Connection, service_name: &str) {
+    let proxy = sni_proxy(connection, service_name);
+    let xml = proxy
+        .introspect()
+        .expect("StatusNotifierItem should be introspectable");
+
+    for property in AYATANA_PROPERTIES {
+        assert!(
+            xml.contains(&format!("property name=\"{property}\"")),
+            "introspection should expose {property}:\n{xml}"
+        );
+    }
+    assert!(
+        xml.contains(&format!("signal name=\"{AYATANA_NEW_LABEL_SIGNAL}\"")),
+        "introspection should expose {AYATANA_NEW_LABEL_SIGNAL}:\n{xml}"
+    );
+    assert!(
+        xml.contains("arg name=\"label\" type=\"s\""),
+        "{AYATANA_NEW_LABEL_SIGNAL} should carry a label argument:\n{xml}"
+    );
+    assert!(
+        xml.contains("arg name=\"guide\" type=\"s\""),
+        "{AYATANA_NEW_LABEL_SIGNAL} should carry a guide argument:\n{xml}"
+    );
+
+    assert_eq!(
+        proxy.get_property::<String>("IconAccessibleDesc").unwrap(),
+        ""
+    );
+    assert_eq!(
+        proxy
+            .get_property::<String>("AttentionAccessibleDesc")
+            .unwrap(),
+        ""
+    );
+    assert_eq!(proxy.get_property::<String>("XAyatanaLabel").unwrap(), "");
+    assert_eq!(
+        proxy.get_property::<String>("XAyatanaLabelGuide").unwrap(),
+        ""
+    );
+    assert_eq!(
+        proxy.get_property::<u32>("XAyatanaOrderingIndex").unwrap(),
+        0
+    );
+}
+
+/// Asserts the values set by [`mutate_ayatana_properties`] are readable.
+#[cfg(feature = "ayatana")]
+pub fn ayatana_updated_property_assertions(connection: &Connection, service_name: &str) {
+    let proxy = sni_proxy(connection, service_name);
+    assert_eq!(
+        proxy.get_property::<String>("IconAccessibleDesc").unwrap(),
+        "Main icon description"
+    );
+    assert_eq!(
+        proxy
+            .get_property::<String>("AttentionAccessibleDesc")
+            .unwrap(),
+        "Attention icon description"
+    );
+    assert_eq!(
+        proxy.get_property::<String>("XAyatanaLabel").unwrap(),
+        "42%"
+    );
+    assert_eq!(
+        proxy.get_property::<String>("XAyatanaLabelGuide").unwrap(),
+        "100%"
+    );
+    assert_eq!(
+        proxy.get_property::<u32>("XAyatanaOrderingIndex").unwrap(),
+        7
+    );
+}
+
+/// Asserts the Ayatana members are compiled out when the feature is disabled.
+#[cfg(not(feature = "ayatana"))]
+pub fn ayatana_absent_assertions(connection: &Connection, service_name: &str) {
+    let proxy = sni_proxy(connection, service_name);
+    let xml = proxy
+        .introspect()
+        .expect("StatusNotifierItem should be introspectable");
+
+    for property in AYATANA_PROPERTIES {
+        assert!(
+            !xml.contains(&format!("property name=\"{property}\"")),
+            "introspection should not expose {property} without the ayatana feature:\n{xml}"
+        );
+    }
+    assert!(
+        !xml.contains(&format!("signal name=\"{AYATANA_NEW_LABEL_SIGNAL}\"")),
+        "introspection should not expose {AYATANA_NEW_LABEL_SIGNAL} without the ayatana feature:\n{xml}"
+    );
+
+    let error = proxy
+        .get_property::<OwnedValue>("XAyatanaLabel")
+        .expect_err("XAyatanaLabel should not be readable without the ayatana feature");
+    assert!(
+        format!("{error:?}").contains("UnknownProperty"),
+        "unexpected error for XAyatanaLabel: {error:?}"
+    );
+}
+
+#[cfg(feature = "ayatana")]
+pub fn spawn_sni_properties_changed_waiter(service_name: &str) -> SignalWaiter {
+    spawn_filtered_signal_waiter(
+        service_name,
+        SNI_PATH,
+        PROPERTIES_INTERFACE,
+        "PropertiesChanged",
+        vec![(0, SNI_INTERFACE.to_string())],
+    )
+}
+
+/// Waits for a `PropertiesChanged` signal on the SNI interface and returns the
+/// changed properties.
+#[cfg(feature = "ayatana")]
+pub fn sni_properties_changed_map(waiter: SignalWaiter) -> HashMap<String, OwnedValue> {
+    let (interface, changed, invalidated): (String, HashMap<String, OwnedValue>, Vec<String>) =
+        message_body(waiter.wait(DEFAULT_TIMEOUT));
+    assert_eq!(interface, SNI_INTERFACE);
+    assert!(invalidated.is_empty());
+    changed
 }
 
 pub fn registration_and_watcher_assertions(connection: &Connection, service_name: &str) {

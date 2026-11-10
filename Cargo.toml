@@ -96,4 +96,4 @@ name = "blocking"
 required-features = ["blocking"]
 
 [package.metadata.docs.rs]
-features = ["blocking", "node"]
+features = ["blocking", "node", "ayatana"]

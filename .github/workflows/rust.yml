@@ -13,7 +13,10 @@ jobs:
         feature-flags:
           - '' # tokio
           - '--features blocking' # tokio + blocking
+          - '--features ayatana' # tokio + ayatana
+          - '--features blocking,ayatana' # tokio + blocking + ayatana
           - '--no-default-features --features async-io' # async-io
+          - '--no-default-features --features async-io,ayatana' # async-io + ayatana
           - '--no-default-features --features async-io,blocking' # async-io + blocking
         include:
         # Allow failures on nightly

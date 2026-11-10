@@ -132,14 +132,6 @@ pub trait Tray: Sized + Send + 'static {
         Default::default()
     }
 
-    /// The Ayatana-specific non-standard `XAyatanaLabel` property: a short
-    /// text label shown next to the icon by AppIndicator-based hosts (for
-    /// example GNOME's ubuntu-appindicators extension, which renders this
-    /// property instead of `Title`). Empty by default.
-    fn x_ayatana_label(&self) -> String {
-        Default::default()
-    }
-
     /// Describes the status of this item or of the associated application.
     fn status(&self) -> Status {
         Status::Active
@@ -258,6 +250,99 @@ pub trait Tray: Sized + Send + 'static {
     #[allow(unused_variables)]
     fn watcher_offline(&self, reason: OfflineReason) -> bool {
         true
+    }
+
+    /// The Ayatana-specific non-standard `IconAccessibleDesc` property
+    /// 
+    /// An accessible description of the icon for screen readers. Hosts fall
+    /// back to other properties such as [`Self::title`] when this is empty.
+    /// 
+    /// Empty by default.
+    ///
+    /// Available with the "ayatana" feature.
+    #[cfg(feature = "ayatana")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ayatana")))]
+    fn icon_accessible_desc(&self) -> String {
+        Default::default()
+    }
+
+    /// The Ayatana-specific non-standard `AttentionAccessibleDesc` property
+    /// 
+    /// An accessible description of the attention icon for screen readers.
+    /// 
+    /// Empty by default.
+    ///
+    /// Available with the "ayatana" feature.
+    #[cfg(feature = "ayatana")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ayatana")))]
+    fn attention_accessible_desc(&self) -> String {
+        Default::default()
+    }
+
+    /// The Ayatana-specific non-standard `XAyatanaLabel` property
+    /// 
+    /// A short text label shown next to the icon by AppIndicator-based hosts
+    /// (for example GNOME's ubuntu-appindicators extension).
+    /// 
+    /// The label will not be shown unless there is an icon
+    /// as well. The label is useful for numerical and other frequently
+    /// updated information. In general, it shouldn't be shown unless a
+    /// user requests it as it can take up a significant amount of space
+    /// on the user's panel. This may not be shown in all visualizations.
+    /// 
+    /// Empty by default.
+    ///
+    /// Available with the "ayatana" feature.
+    #[cfg(feature = "ayatana")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ayatana")))]
+    fn x_ayatana_label(&self) -> String {
+        Default::default()
+    }
+
+    /// The Ayatana-specific non-standard `XAyatanaLabelGuide` property
+    /// 
+    /// An optional string to provide guidance to the panel on how big
+    /// the [`Self::x_ayatana_label`] string could get. If this is set
+    /// correctly then the panel should never 'jiggle' as the string
+    /// adjusts throughout the range of options. For instance, if you
+    /// were providing a percentage like "54% thrust" in
+    /// [`Self::x_ayatana_label`] you'd want to set this string to
+    /// "100% thrust" to ensure space when Scotty can get you enough
+    /// power.
+    /// 
+    /// Use the widest value the label can produce as the guide, since
+    /// character widths differ. For example, if the label may reach
+    /// `200%`, a guide of `100%` is too narrow because `2` is wider
+    /// than `1` in non-mono fonts.
+    ///
+    /// Empty by default.
+    ///
+    /// Available with the "ayatana" feature.
+    #[cfg(feature = "ayatana")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ayatana")))]
+    fn x_ayatana_label_guide(&self) -> String {
+        Default::default()
+    }
+
+    /// The Ayatana-specific non-standard `XAyatanaOrderingIndex` property
+    /// 
+    /// The ordering index is an odd parameter, and if you think you
+    /// don't need it you're probably right. In general, the application
+    /// indicator service will try to place the indicators in a
+    /// recreatable place taking into account which category they're in
+    /// to try and group them. But, there are some cases when you'd want
+    /// to ensure indicators are next to each other. To do that you can
+    /// override the generated ordering index and replace it with a new
+    /// one. Again, you probably don't want to do this, but in case you
+    /// do, this is the way.
+    /// 
+    /// `0` lets the host decide. `0` by default.
+    ///
+    /// Available with the "ayatana" feature.
+    #[cfg(feature = "ayatana")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ayatana")))]
+    fn x_ayatana_ordering_index(&self) -> u32 {
+        0
     }
 }
 

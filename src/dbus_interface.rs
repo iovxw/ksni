@@ -158,8 +158,91 @@ impl<T> StatusNotifierItem<T> {
     }
 }
 
-#[zbus::interface(name = "org.kde.StatusNotifierItem")]
-impl<T: Tray> StatusNotifierItem<T> {
+// zbus's `#[zbus::interface]` reads the impl members at expansion time and
+// generates the `Interface` implementation. However it does not support
+// member-level `#[cfg]`: with the feature disabled, generated code still
+// reference cfg'd-out property getters or signal trait methods, producing
+// E0599/E0046. So we can not do this:
+//
+//     #[zbus::interface(name = "org.kde.StatusNotifierItem")]
+//     impl<T: Tray> StatusNotifierItem<T> {
+//         #[cfg(feature = "ayatana")]
+//         #[zbus(property)]
+//         fn icon_accessible_desc(&self) -> zbus::fdo::Result<String> {
+//             Ok(String::new())
+//         }
+//     }
+//
+// There is a second constraint: macro expansion order. `#[zbus::interface]`
+// expands before macros nested inside the impl. If we created an empty impl
+// and tried to add methods from other macros later, zbus would only see
+// `ImplItem::Macro` ↓
+//
+//     #[zbus::interface(name = "org.kde.StatusNotifierItem")]
+//     impl<T: Tray> StatusNotifierItem<T> {
+//         common_members!();
+//         ayatana_members!();
+//     }
+//
+// Instead, the final impl carrying `#[zbus::interface]` must be generated
+// with all members already present as literal tokens. So the macros become
+// a little bit complex, but put it simply:
+//
+// `compose!(member1, member2, header)`
+// turning the generated header/member macros into the equivalent of
+// `header { $(member1)* $(member2)* }`
+//
+// BTW: Generating a macro requires emitting literal `$` tokens (for example
+// `$next` or `$($acc)*`), but `$` starts a metavariable in a macro transcriber.
+// We use the stable "dollar trick": generators take a `$d:tt` argument and the
+// caller passes a literal `$`. Thus `$d next` becomes `$next` and
+// `$d($d acc:tt)*` becomes `$($acc:tt)*` in the generated macro. (`$$`
+// escaping is unstable and cannot be used here.)
+macro_rules! compose {
+    ($first:ident $(, $rest:ident)*) => {
+        $first! { [$($rest),*] }
+    };
+}
+
+// ```text
+// ([$next $(, $rest)*] $($acc)*) => {
+//     $next! { [$($rest),*] $($acc)* <members> }
+// }
+// ```
+macro_rules! define_members {
+    ($d:tt, $name:ident, { $($members:tt)* }) => {
+        macro_rules! $name {
+            ([$d next:ident $d(, $d rest:ident)*] $d($d acc:tt)*) => {
+                $d next! {
+                    [$d($d rest),*]
+                    $d($d acc)*
+                    $($members)*
+                }
+            };
+        }
+    };
+}
+
+// ```text
+// ([] $($members)*) => {
+//     <header> {
+//         $($members)*
+//     }
+// }
+// ```
+macro_rules! define_header {
+    ($d:tt, $name:ident, { $($header:tt)* }) => {
+        macro_rules! $name {
+            ([] $d($d members:tt)*) => {
+                $($header)* {
+                    $d($d members)*
+                }
+            };
+        }
+    };
+}
+
+define_members!($, common_members, {
     // show a self rendered menu, not supported by ksni
     fn context_menu(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
         Err(zbus::fdo::Error::UnknownMethod(
@@ -264,14 +347,6 @@ impl<T: Tray> StatusNotifierItem<T> {
         Ok(self
             .0
             .lock_state(false, async |state| state.get_title())
-            .await)
-    }
-
-    #[zbus(property)]
-    async fn x_ayatana_label(&self) -> zbus::fdo::Result<String> {
-        Ok(self
-            .0
-            .lock_state(false, async |state| state.get_x_ayatana_label())
             .await)
     }
 
@@ -401,7 +476,70 @@ impl<T: Tray> StatusNotifierItem<T> {
         ctxt: &SignalEmitter<'_>,
         icon_theme_path: &str,
     ) -> zbus::Result<()>;
-}
+});
+
+#[cfg(feature = "ayatana")]
+define_members!($, ayatana_members, {
+    #[zbus(property)]
+    async fn icon_accessible_desc(&self) -> zbus::fdo::Result<String> {
+        Ok(self
+            .0
+            .lock_state(false, async |state| state.get_icon_accessible_desc())
+            .await)
+    }
+
+    #[zbus(property)]
+    async fn attention_accessible_desc(&self) -> zbus::fdo::Result<String> {
+        Ok(self
+            .0
+            .lock_state(false, async |state| {
+                state.get_attention_accessible_desc()
+            })
+            .await)
+    }
+
+    #[zbus(property)]
+    async fn x_ayatana_label(&self) -> zbus::fdo::Result<String> {
+        Ok(self
+            .0
+            .lock_state(false, async |state| state.get_x_ayatana_label())
+            .await)
+    }
+
+    #[zbus(property)]
+    async fn x_ayatana_label_guide(&self) -> zbus::fdo::Result<String> {
+        Ok(self
+            .0
+            .lock_state(false, async |state| state.get_x_ayatana_label_guide())
+            .await)
+    }
+
+    #[zbus(property)]
+    async fn x_ayatana_ordering_index(&self) -> zbus::fdo::Result<u32> {
+        Ok(self
+            .0
+            .lock_state(false, async |state| state.get_x_ayatana_ordering_index())
+            .await)
+    }
+
+    #[zbus(signal)]
+    pub async fn x_ayatana_new_label(
+        ctxt: &SignalEmitter<'_>,
+        label: &str,
+        guide: &str,
+    ) -> zbus::Result<()>;
+});
+
+define_header!($, impl_for_sni, {
+    #[zbus::interface(name = "org.kde.StatusNotifierItem")]
+    impl<T: Tray> StatusNotifierItem<T>
+});
+
+#[cfg(feature = "ayatana")]
+compose!(common_members, ayatana_members, impl_for_sni);
+
+#[cfg(not(feature = "ayatana"))]
+compose!(common_members, impl_for_sni);
 
 #[derive(Debug, Default, Type, Serialize, PartialEq)]
 pub struct Layout {

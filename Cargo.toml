@@ -15,6 +15,7 @@ exclude = ["reference/", "spec/"]
 
 [features]
 default = ["tokio"]
+ayatana = []
 blocking = []
 node = []
 tokio = ["dep:tokio", "zbus/tokio"]

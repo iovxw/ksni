@@ -652,14 +652,22 @@ pub async fn non_standard_compatibility() {
         let item_is_menu: bool = proxy.get_property("ItemIsMenu").unwrap();
         assert!(item_is_menu);
 
-        // non-standard compatibility behavior: ksni reports Activate as UnknownMethod(ItemIsMenu)
-        // when MENU_ON_ACTIVATE is enabled to match existing desktop-environment behavior.
+        // menu-only items must not advertise Activate in introspection, otherwise
+        // GNOME's AppIndicator extension waits a double-click interval on every click.
+        let xml = proxy
+            .introspect()
+            .expect("StatusNotifierItem should be introspectable");
+        assert!(
+            !xml.contains("method name=\"Activate\""),
+            "menu-only items should not expose Activate:\n{xml}"
+        );
+
+        // hosts that call Activate anyway get UnknownMethod
         let activate_err = proxy
             .call::<_, _, ()>("Activate", &(1_i32, 2_i32))
             .expect_err("MENU_ON_ACTIVATE trays should reject Activate calls");
         let activate_err = format!("{activate_err:?}");
         assert!(activate_err.contains("UnknownMethod"));
-        assert!(activate_err.contains("ItemIsMenu"));
 
         // non-standard compatibility behavior: ksni does not implement ContextMenu and reports
         // UnknownMethod instead of trying to render a menu itself.
@@ -668,6 +676,46 @@ pub async fn non_standard_compatibility() {
             .expect_err("ContextMenu should not be implemented");
         let context_err = format!("{context_err:?}");
         assert!(context_err.contains("UnknownMethod"));
+    })
+    .await;
+
+    // updates must still emit signals when the menu-only interface is served
+    let signal_service_name = service_name.clone();
+    let (new_title, properties_changed) = with_blocking(move || {
+        (
+            spawn_signal_waiter(&signal_service_name, SNI_PATH, SNI_INTERFACE, "NewTitle"),
+            spawn_filtered_signal_waiter(
+                &signal_service_name,
+                SNI_PATH,
+                PROPERTIES_INTERFACE,
+                "PropertiesChanged",
+                vec![(0, SNI_INTERFACE.to_string())],
+            ),
+        )
+    })
+    .await;
+    handle
+        .update(|tray| {
+            tray.title = "Updated Mock Tray".into();
+            tray.window_id = 42;
+        })
+        .await
+        .expect("tray should still be alive for updates");
+    let check_service_name = service_name.clone();
+    with_blocking(move || {
+        let _: () = message_body(new_title.wait(DEFAULT_TIMEOUT));
+        let (interface, changed, invalidated): (String, HashMap<String, OwnedValue>, Vec<String>) =
+            message_body(properties_changed.wait(DEFAULT_TIMEOUT));
+        assert_eq!(interface, SNI_INTERFACE);
+        assert!(invalidated.is_empty());
+        assert!(changed.contains_key("WindowId"));
+
+        let connection = session_connection();
+        let proxy = sni_proxy(&connection, &check_service_name);
+        let title: String = proxy.get_property("Title").unwrap();
+        assert_eq!(title, "Updated Mock Tray");
+        let window_id: i32 = proxy.get_property("WindowId").unwrap();
+        assert_eq!(window_id, 42);
     })
     .await;
 

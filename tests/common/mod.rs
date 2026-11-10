@@ -814,6 +814,14 @@ pub fn sni_property_and_method_assertions(
 ) {
     let proxy = sni_proxy(connection, service_name);
 
+    let xml = proxy
+        .introspect()
+        .expect("StatusNotifierItem should be introspectable");
+    assert!(
+        xml.contains("method name=\"Activate\""),
+        "regular items should expose Activate:\n{xml}"
+    );
+
     let category: String = proxy.get_property("Category").unwrap();
     let id: String = proxy.get_property("Id").unwrap();
     let title: String = proxy.get_property("Title").unwrap();

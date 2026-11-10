@@ -9,13 +9,14 @@ use std::sync::Arc;
 use futures_util::{future::Either, StreamExt};
 use pastey::paste;
 use zbus::fdo::DBusProxy;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::Connection;
 
 use crate::compat::{self, mpsc, select, Mutex};
 use crate::dbus_interface::{
-    Context, DbusMenu, Layout, StatusNotifierItem, StatusNotifierWatcherProxy, MENU_INTERFACE,
-    MENU_PATH, SNI_INTERFACE, SNI_PATH,
+    Context, DbusMenu, Layout, MenuOnlyStatusNotifierItem, StatusNotifierItem,
+    StatusNotifierWatcherProxy, MENU_INTERFACE, MENU_PATH, SNI_INTERFACE, SNI_PATH,
 };
 use crate::menu;
 use crate::{Error, HandleRequest, OfflineReason, Tray};
@@ -28,21 +29,25 @@ pub(crate) async fn run<T: Tray>(
     own_name: bool,
     assume_sni_available: bool,
 ) -> Result<impl Future<Output = ()>, Error> {
-    let sni_obj = StatusNotifierItem::new(service.clone());
     let menu_obj = DbusMenu::new(service.clone());
-    let Service { state, .. } = service;
 
     // for those `expect`, see: https://github.com/dbus2/zbus/issues/403
-    let conn = zbus::connection::Builder::session()
+    let builder = zbus::connection::Builder::session()
         .map_err(|e| Error::Dbus(e))?
-        .internal_executor(false) // avoid extra thread when async-io enabled
-        .serve_at(SNI_PATH, sni_obj)
+        .internal_executor(false); // avoid extra thread when async-io enabled
+    let builder = if T::MENU_ON_ACTIVATE {
+        builder.serve_at(SNI_PATH, MenuOnlyStatusNotifierItem::new(service.clone()))
+    } else {
+        builder.serve_at(SNI_PATH, StatusNotifierItem::new(service.clone()))
+    };
+    let conn = builder
         .expect("SNI_PATH should be valid")
         .serve_at(MENU_PATH, menu_obj)
         .expect("MENU_PATH should be valid")
         .build()
         .await
         .map_err(|e| Error::Dbus(e))?;
+    let Service { state, .. } = service;
 
     if cfg!(feature = "async-io") {
         let executor = conn.executor().clone();
@@ -245,10 +250,7 @@ impl<T: Tray> Service<T> {
 
 impl<T: Tray> State<T> {
     async fn update_properties(&mut self, conn: &Connection) -> zbus::Result<()> {
-        let sni_obj = conn
-            .object_server()
-            .interface::<_, StatusNotifierItem<T>>(SNI_PATH)
-            .await?;
+        let sni_emitter = SignalEmitter::new(conn, SNI_PATH)?;
         let menu_obj = conn
             .object_server()
             .interface::<_, DbusMenu<T>>(MENU_PATH)
@@ -262,11 +264,8 @@ impl<T: Tray> State<T> {
         }
 
         if self.status_changed() {
-            StatusNotifierItem::<T>::new_status(
-                sni_obj.signal_emitter(),
-                &self.get_status().to_string(),
-            )
-            .await?;
+            StatusNotifierItem::<T>::new_status(&sni_emitter, &self.get_status().to_string())
+                .await?;
             menu_changed.insert("Status", self.get_status().to_menu_status().into());
         }
 
@@ -275,11 +274,7 @@ impl<T: Tray> State<T> {
             // `NewIconThemePath` is a non-standard Ayatana extension to the KDE
             // StatusNotifierItem spec. Emit it on a best-effort for hosts that
             // support it. `PropertiesChanged` covers the rest.
-            StatusNotifierItem::<T>::new_icon_theme_path(
-                sni_obj.signal_emitter(),
-                &icon_theme_path,
-            )
-            .await?;
+            StatusNotifierItem::<T>::new_icon_theme_path(&sni_emitter, &icon_theme_path).await?;
             sni_changed.insert("IconThemePath", icon_theme_path.clone().into());
             menu_changed.insert("IconThemePath", vec![icon_theme_path].into());
         }
@@ -295,7 +290,7 @@ impl<T: Tray> State<T> {
         // TODO: assert the id is consistent
 
         if self.title_changed() {
-            StatusNotifierItem::<T>::new_title(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_title(&sni_emitter).await?;
         }
         #[cfg(feature = "ayatana")]
         if self.icon_accessible_desc_changed() {
@@ -322,12 +317,7 @@ impl<T: Tray> State<T> {
                 // path, which is enough for us.
                 // https://github.com/canonical/snapd/blob/0cc7bc56cf8ad82387c98fad5c2b6bd1d063d8ea/interfaces/builtin/unity7.go#L507-L512
                 // https://github.com/canonical/snapd/commit/0cc7bc56cf8ad82387c98fad5c2b6bd1d063d8ea
-                StatusNotifierItem::<T>::x_ayatana_new_label(
-                    sni_obj.signal_emitter(),
-                    &label,
-                    &guide,
-                )
-                .await?;
+                StatusNotifierItem::<T>::x_ayatana_new_label(&sni_emitter, &label, &guide).await?;
                 if label_changed {
                     sni_changed.insert("XAyatanaLabel", label.into());
                 }
@@ -344,24 +334,24 @@ impl<T: Tray> State<T> {
             );
         }
         if self.icon_name_changed() || self.icon_pixmap_changed() {
-            StatusNotifierItem::<T>::new_icon(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_icon(&sni_emitter).await?;
         }
         if self.overlay_icon_name_changed() || self.overlay_icon_pixmap_changed() {
-            StatusNotifierItem::<T>::new_overlay_icon(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_overlay_icon(&sni_emitter).await?;
         }
         if self.attention_icon_name_changed()
             || self.attention_icon_pixmap_changed()
             || self.attention_movie_name_changed()
         {
-            StatusNotifierItem::<T>::new_attention_icon(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_attention_icon(&sni_emitter).await?;
         }
         if self.tool_tip_changed() {
-            StatusNotifierItem::<T>::new_tool_tip(sni_obj.signal_emitter()).await?;
+            StatusNotifierItem::<T>::new_tool_tip(&sni_emitter).await?;
         }
 
         if !sni_changed.is_empty() {
             zbus::fdo::Properties::properties_changed(
-                sni_obj.signal_emitter(),
+                &sni_emitter,
                 SNI_INTERFACE,
                 sni_changed,
                 Cow::Borrowed(&[]),

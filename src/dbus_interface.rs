@@ -158,6 +158,27 @@ impl<T> StatusNotifierItem<T> {
     }
 }
 
+/// The `org.kde.StatusNotifierItem` interface without the `Activate` method.
+///
+/// Used when [`Tray::MENU_ON_ACTIVATE`](crate::Tray::MENU_ON_ACTIVATE) is set.
+/// The GNOME AppIndicator extension ignores `ItemIsMenu` and instead checks the
+/// introspection data for an `Activate` method; when it exists, every click
+/// waits out the double-click interval before opening the menu.
+///
+/// Hosts that call `Activate` anyway (KDE Plasma < 6.4) get `UnknownMethod`,
+/// which is required for `ItemIsMenu` to work correctly.
+///
+/// https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L803
+/// https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L44-L57
+/// https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
+pub struct MenuOnlyStatusNotifierItem<T>(Service<T>);
+
+impl<T> MenuOnlyStatusNotifierItem<T> {
+    pub fn new(service: Service<T>) -> Self {
+        Self(service)
+    }
+}
+
 // zbus's `#[zbus::interface]` reads the impl members at expansion time and
 // generates the `Interface` implementation. However it does not support
 // member-level `#[cfg]`: with the feature disabled, generated code still
@@ -248,28 +269,6 @@ define_members!($, common_members, {
         Err(zbus::fdo::Error::UnknownMethod(
             "Not supported, please use `menu`".into(),
         ))
-    }
-
-    async fn activate(
-        &self,
-        #[zbus(connection)] conn: &Connection,
-        x: i32,
-        y: i32,
-    ) -> zbus::fdo::Result<()> {
-        if T::MENU_ON_ACTIVATE {
-            // a UnknownMethod is required to make ItemIsMenu work on GNOME
-            // https://github.com/ubuntu/gnome-shell-extension-appindicator/blob/557dbddc8d469d1aaa302e6cf70600855dd767d1/appIndicator.js#L803
-            // KDE Plasma < 6.4 also relies on this behavior
-            // https://github.com/KDE/plasma-workspace/blob/4a98130f76bcae4211d3f9b10e4a7b760613ffc6/applets/systemtray/package/contents/ui/items/StatusNotifierItem.qml#L44-L57
-            // KDE Plasma >= 6.4 won't call activate if ItemIsMenu is true, so we can keep this workaround
-            // https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/5332
-            Err(zbus::fdo::Error::UnknownMethod("ItemIsMenu".into()))
-        } else {
-            self.0
-                .lock_state(true, async |state| state.call_activate(conn, x, y).await)
-                .await;
-            Ok(())
-        }
     }
 
     async fn secondary_activate(
@@ -478,6 +477,20 @@ define_members!($, common_members, {
     ) -> zbus::Result<()>;
 });
 
+define_members!($, activate_method, {
+    async fn activate(
+        &self,
+        #[zbus(connection)] conn: &Connection,
+        x: i32,
+        y: i32,
+    ) -> zbus::fdo::Result<()> {
+        self.0
+            .lock_state(true, async |state| state.call_activate(conn, x, y).await)
+            .await;
+        Ok(())
+    }
+});
+
 #[cfg(feature = "ayatana")]
 define_members!($, ayatana_members, {
     #[zbus(property)]
@@ -535,11 +548,30 @@ define_header!($, impl_for_sni, {
     impl<T: Tray> StatusNotifierItem<T>
 });
 
+define_header!($, impl_for_menu_only_sni, {
+    // Allow dead_code because `update_properties` emits signals through
+    // `StatusNotifierItem`, so this identical copy of the signal methods is unused.
+    #[allow(dead_code)]
+    #[zbus::interface(name = "org.kde.StatusNotifierItem")]
+    impl<T: Tray> MenuOnlyStatusNotifierItem<T>
+});
+
 #[cfg(feature = "ayatana")]
-compose!(common_members, ayatana_members, impl_for_sni);
+compose!(
+    common_members,
+    activate_method,
+    ayatana_members,
+    impl_for_sni
+);
 
 #[cfg(not(feature = "ayatana"))]
-compose!(common_members, impl_for_sni);
+compose!(common_members, activate_method, impl_for_sni);
+
+#[cfg(feature = "ayatana")]
+compose!(common_members, ayatana_members, impl_for_menu_only_sni);
+
+#[cfg(not(feature = "ayatana"))]
+compose!(common_members, impl_for_menu_only_sni);
 
 #[derive(Debug, Default, Type, Serialize, PartialEq)]
 pub struct Layout {

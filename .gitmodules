@@ -19,3 +19,42 @@
 [submodule "reference/Waybar"]
 	path = reference/Waybar
 	url = https://github.com/Alexays/Waybar
+[submodule "reference/xfce4-panel"]
+	path = reference/xfce4-panel
+	url = https://gitlab.xfce.org/xfce/xfce4-panel
+[submodule "reference/lxqt-panel"]
+	path = reference/lxqt-panel
+	url = https://github.com/lxqt/lxqt-panel
+[submodule "reference/sfwbar"]
+	path = reference/sfwbar
+	url = https://github.com/LBCrion/sfwbar
+[submodule "reference/nwg-panel"]
+	path = reference/nwg-panel
+	url = https://github.com/nwg-piotr/nwg-panel
+[submodule "reference/sway"]
+	path = reference/sway
+	url = https://github.com/swaywm/sway
+[submodule "reference/mate-panel"]
+	path = reference/mate-panel
+	url = https://github.com/mate-desktop/mate-panel
+[submodule "reference/quickshell"]
+	path = reference/quickshell
+	url = https://github.com/quickshell-mirror/quickshell
+[submodule "reference/fabric"]
+	path = reference/fabric
+	url = https://github.com/Fabric-Development/fabric
+[submodule "reference/eww"]
+	path = reference/eww
+	url = https://github.com/elkowar/eww
+[submodule "reference/system-tray"]
+	path = reference/system-tray
+	url = https://github.com/JakeStanger/system-tray
+[submodule "reference/ironbar"]
+	path = reference/ironbar
+	url = https://github.com/JakeStanger/ironbar
+[submodule "reference/astal"]
+	path = reference/astal
+	url = https://github.com/Aylur/astal
+[submodule "reference/cosmic-applets"]
+	path = reference/cosmic-applets
+	url = https://github.com/pop-os/cosmic-applets

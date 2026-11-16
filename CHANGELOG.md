@@ -1,3 +1,8 @@
+# Unreleased
+
+## Added
+- `accessible_desc` on `StandardItem`, `CheckmarkItem` and `SubMenu`, sent as the DBusMenu `accessible-desc` property so screen readers can describe an item beyond its label
+
 # 0.3.7 (2026-10-20)
 
 ## Added

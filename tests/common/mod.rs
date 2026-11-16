@@ -351,6 +351,9 @@ impl<const MENU_ON_ACTIVATE: bool> ksni::Tray for TestTray<MENU_ON_ACTIVATE> {
         let mut items = vec![
             StandardItem {
                 label: self.standard_label.clone(),
+                // Empty sends no `accessible-desc`: the protocol tests' property
+                // lists stay exactly as they were.
+                accessible_desc: String::new(),
                 enabled: self.standard_enabled,
                 visible: self.standard_visible,
                 icon_name: self.standard_icon_name.clone(),
